@@ -343,7 +343,8 @@ function CargarListasSection() {
             <div className="rounded-lg border border-accent/30 bg-accent/10 p-4">
               <p className="text-sm font-medium text-accent">Carga completada</p>
               <p className="mt-1 text-sm text-muted">
-                Los repuestos ya estan en la base de datos. Ve al Comparador para buscar.
+                Carga exitosa: los repuestos de esta subida ya están disponibles. Ve al Comparador
+                para buscar (solo se usan las listas activas por proveedor).
               </p>
               <Link
                 to="/comparador"

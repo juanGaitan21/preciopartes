@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
-import type { Proveedor, ResultadoBusqueda } from '../types'
+import type { ResultadoBusqueda } from '../types'
 
 const EMPTY = '-'
+const DEBOUNCE_MS = 350
+const MIN_CHARS = 2
 
 function formatCOP(value: number) {
   return new Intl.NumberFormat('es-CO', {
@@ -49,48 +51,53 @@ function ResultRow({ item }: { item: ResultadoBusqueda }) {
 
 export function ComparadorPage() {
   const [query, setQuery] = useState('')
-  const [vehiculo, setVehiculo] = useState('')
-  const [proveedorId, setProveedorId] = useState<number | ''>('')
   const [soloMasBaratos, setSoloMasBaratos] = useState(false)
   const [resultados, setResultados] = useState<ResultadoBusqueda[]>([])
-  const [proveedores, setProveedores] = useState<Proveedor[]>([])
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
   const [error, setError] = useState('')
+  const requestId = useRef(0)
 
   useEffect(() => {
-    api.proveedores()
-      .then(setProveedores)
-      .catch(() => {})
-  }, [])
+    const trimmed = query.trim()
 
-  const buscar = useCallback(async (e?: FormEvent) => {
-    e?.preventDefault()
-    if (query.trim().length < 2) {
-      setError('Ingresa al menos 2 caracteres para buscar')
+    if (trimmed.length < MIN_CHARS) {
+      setResultados([])
+      setSearched(false)
+      setError('')
+      setLoading(false)
       return
     }
 
-    setError('')
     setLoading(true)
-    setSearched(true)
+    const id = ++requestId.current
 
-    try {
-      const data = await api.buscar({
-        q: query.trim(),
-        vehiculo: vehiculo || undefined,
-        proveedor_id: proveedorId || undefined,
-        solo_mas_baratos: soloMasBaratos,
-        limit: 100,
-      })
-      setResultados(data.resultados)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error en la busqueda')
-      setResultados([])
-    } finally {
-      setLoading(false)
-    }
-  }, [query, vehiculo, proveedorId, soloMasBaratos])
+    const timer = setTimeout(async () => {
+      setError('')
+      try {
+        const data = await api.buscar({
+          q: trimmed,
+          solo_mas_baratos: soloMasBaratos,
+          limit: 100,
+        })
+        if (id !== requestId.current) return
+        setResultados(data.resultados)
+        setSearched(true)
+      } catch (err) {
+        if (id !== requestId.current) return
+        setError(err instanceof Error ? err.message : 'Error en la busqueda')
+        setResultados([])
+        setSearched(true)
+      } finally {
+        if (id === requestId.current) setLoading(false)
+      }
+    }, DEBOUNCE_MS)
+
+    return () => clearTimeout(timer)
+  }, [query, soloMasBaratos])
+
+  const trimmedQuery = query.trim()
+  const showHint = trimmedQuery.length > 0 && trimmedQuery.length < MIN_CHARS
 
   return (
     <div className="mx-auto max-w-7xl">
@@ -101,49 +108,20 @@ export function ComparadorPage() {
         </p>
       </div>
 
-      <form
-        onSubmit={buscar}
-        className="mb-6 rounded-xl border border-border bg-surface p-4 md:p-5"
-      >
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <div className="md:col-span-2">
-            <label className="mb-1.5 block text-sm font-medium text-muted">Buscar repuesto</label>
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Referencia, descripcion o vehiculo..."
-              className="w-full rounded-lg border border-border bg-bg px-3 py-2.5 text-sm text-text outline-none focus:border-primary"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-muted">Vehiculo</label>
-            <input
-              type="text"
-              value={vehiculo}
-              onChange={(e) => setVehiculo(e.target.value)}
-              placeholder="Ej: AVEO, KIA..."
-              className="w-full rounded-lg border border-border bg-bg px-3 py-2.5 text-sm text-text outline-none focus:border-primary"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-muted">Proveedor</label>
-            <select
-              value={proveedorId}
-              onChange={(e) => setProveedorId(e.target.value ? Number(e.target.value) : '')}
-              className="w-full rounded-lg border border-border bg-bg px-3 py-2.5 text-sm text-text outline-none focus:border-primary"
-            >
-              <option value="">Todos</option>
-              {proveedores.map((p) => (
-                <option key={p.id} value={p.id}>{p.nombre}</option>
-              ))}
-            </select>
-          </div>
+      <div className="mb-6 rounded-xl border border-border bg-surface p-4 md:p-5">
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-muted">Buscar repuesto</label>
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Referencia, descripcion, vehiculo (ej: renault kwid, bujia)..."
+            autoComplete="off"
+            className="w-full rounded-lg border border-border bg-bg px-3 py-2.5 text-sm text-text outline-none focus:border-primary"
+          />
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-4">
+        <div className="mt-4">
           <label className="flex cursor-pointer items-center gap-2 text-sm text-muted">
             <input
               type="checkbox"
@@ -153,32 +131,31 @@ export function ComparadorPage() {
             />
             Solo mostrar el mas barato por referencia
           </label>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="mt-auto rounded-lg bg-accent-dim px-5 py-2.5 text-sm font-semibold text-white hover:bg-accent disabled:opacity-50"
-          >
-            {loading ? 'Buscando...' : 'Buscar'}
-          </button>
         </div>
 
+        {showHint && (
+          <p className="mt-3 text-sm text-muted">
+            Escribe al menos {MIN_CHARS} caracteres para buscar...
+          </p>
+        )}
         {error && (
           <p className="mt-3 text-sm text-danger">{error}</p>
         )}
-      </form>
+      </div>
 
-      {searched && !loading && (
+      {(searched || loading) && trimmedQuery.length >= MIN_CHARS && (
         <div className="rounded-xl border border-border bg-surface">
           <div className="border-b border-border px-4 py-3">
             <p className="text-sm text-muted">
-              {resultados.length === 0
-                ? 'No se encontraron resultados para tu busqueda'
-                : `${resultados.length} resultado${resultados.length !== 1 ? 's' : ''} encontrado${resultados.length !== 1 ? 's' : ''}`}
+              {loading
+                ? 'Buscando...'
+                : resultados.length === 0
+                  ? 'No se encontraron resultados para tu busqueda'
+                  : `${resultados.length} resultado${resultados.length !== 1 ? 's' : ''} encontrado${resultados.length !== 1 ? 's' : ''}`}
             </p>
           </div>
 
-          {resultados.length > 0 && (
+          {!loading && resultados.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[640px]">
                 <thead>
