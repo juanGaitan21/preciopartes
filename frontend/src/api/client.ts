@@ -1,4 +1,13 @@
-import type { BuscarResponse, Proveedor, TokenResponse, User } from '../types'
+import type {
+  BuscarResponse,
+  Lista,
+  Proveedor,
+  TokenResponse,
+  UploadResponse,
+  User,
+  UserCreate,
+  UserUpdate,
+} from '../types'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -114,4 +123,28 @@ export const api = {
   },
 
   proveedores: () => request<Proveedor[]>('/api/proveedores'),
+
+  listas: (proveedorId?: number) => {
+    const q = proveedorId ? `?proveedor_id=${proveedorId}` : ''
+    return request<Lista[]>(`/api/listas${q}`)
+  },
+
+  uploadLista: (archivo: File, proveedorId: number, tipo?: string) => {
+    const form = new FormData()
+    form.append('archivo', archivo)
+    form.append('proveedor_id', String(proveedorId))
+    if (tipo) form.append('tipo', tipo)
+    return request<UploadResponse>('/api/listas/upload', { method: 'POST', body: form })
+  },
+
+  desactivarLista: (listaId: number) =>
+    request<{ ok: boolean; mensaje: string }>(`/api/listas/${listaId}`, { method: 'DELETE' }),
+
+  listUsers: () => request<User[]>('/auth/users'),
+
+  createUser: (data: UserCreate) =>
+    request<User>('/auth/users', { method: 'POST', body: JSON.stringify(data) }),
+
+  updateUser: (id: number, data: UserUpdate) =>
+    request<User>(`/auth/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 }

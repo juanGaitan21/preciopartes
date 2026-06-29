@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from api.deps import get_current_user, require_permission, require_roles
+from api.db_init import init_users_table
 from api.routes_auth import router as auth_router
 
 # ETL propio
@@ -56,6 +57,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:pass@localhost:5432/
 @app.on_event("startup")
 async def startup():
     app.state.pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+    await init_users_table(app.state.pool)
     logger.info("DB pool creado")
 
 @app.on_event("shutdown")

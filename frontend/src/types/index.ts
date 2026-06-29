@@ -44,3 +44,38 @@ export interface Proveedor {
   email: string | null
   activo: boolean
 }
+
+export interface Lista {
+  id: number
+  archivo_nombre: string
+  fecha_lista: string | null
+  total_registros: number
+  subido_en: string
+  activa: boolean
+  subido_por: string | null
+  proveedor: string
+}
+
+export interface UserCreate {
+  nombre: string
+  email: string
+  password: string
+  rol: Rol
+}
+
+export interface UserUpdate {
+  nombre?: string
+  email?: string
+  password?: string
+  rol?: Rol
+  activo?: boolean
+}
+
+export interface UploadResponse {
+  ok: boolean
+  lista_id: number
+  archivo: string
+  registros_cargados: number
+  fecha_lista: string | null
+  mensaje: string
+}
