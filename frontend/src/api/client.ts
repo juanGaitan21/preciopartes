@@ -1,4 +1,5 @@
 import type {
+  BatchUploadResponse,
   BuscarResponse,
   Lista,
   Proveedor,
@@ -129,12 +130,18 @@ export const api = {
     return request<Lista[]>(`/api/listas${q}`)
   },
 
-  uploadLista: (archivo: File, proveedorId: number, tipo?: string) => {
+  uploadLista: (archivo: File, proveedorId?: number, tipo?: string) => {
     const form = new FormData()
     form.append('archivo', archivo)
-    form.append('proveedor_id', String(proveedorId))
+    if (proveedorId) form.append('proveedor_id', String(proveedorId))
     if (tipo) form.append('tipo', tipo)
     return request<UploadResponse>('/api/listas/upload', { method: 'POST', body: form })
+  },
+
+  uploadListasBatch: (archivos: File[]) => {
+    const form = new FormData()
+    archivos.forEach((a) => form.append('archivos', a))
+    return request<BatchUploadResponse>('/api/listas/upload-batch', { method: 'POST', body: form })
   },
 
   desactivarLista: (listaId: number) =>

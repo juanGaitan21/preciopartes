@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { api } from '../api/client'
-import type { Lista, Proveedor, Rol, User } from '../types'
+import type { BatchUploadResponse, Lista, Rol, User } from '../types'
 
 const ROLES: { value: Rol; label: string }[] = [
   { value: 'admin', label: 'Admin' },
@@ -256,90 +256,101 @@ function UsuariosSection() {
 // ---------------------------------------------------------------------------
 
 function CargarListasSection() {
-  const [proveedores, setProveedores] = useState<Proveedor[]>([])
-  const [proveedorId, setProveedorId] = useState<number | ''>('')
-  const [tipo, setTipo] = useState('')
-  const [archivo, setArchivo] = useState<File | null>(null)
+  const [archivos, setArchivos] = useState<File[]>([])
   const [uploading, setUploading] = useState(false)
   const [result, setResult] = useState('')
   const [error, setError] = useState('')
-
-  useEffect(() => {
-    api.proveedores().then(setProveedores).catch(() => {})
-  }, [])
+  const [detalle, setDetalle] = useState<BatchUploadResponse | null>(null)
 
   const handleUpload = async (e: FormEvent) => {
     e.preventDefault()
-    if (!archivo || !proveedorId) {
-      setError('Selecciona un proveedor y un archivo Excel')
+    if (archivos.length === 0) {
+      setError('Selecciona uno o mas archivos Excel')
       return
     }
     setUploading(true)
     setError('')
     setResult('')
+    setDetalle(null)
     try {
-      const res = await api.uploadLista(archivo, proveedorId, tipo || undefined)
+      const res = await api.uploadListasBatch(archivos)
+      setDetalle(res)
       setResult(res.mensaje)
-      setArchivo(null)
+      setArchivos([])
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al subir archivo')
+      setError(err instanceof Error ? err.message : 'Error al subir archivos')
     } finally {
       setUploading(false)
     }
   }
 
   return (
-    <div className="max-w-xl">
+    <div className="max-w-2xl">
       <p className="mb-4 text-sm text-muted">
-        Sube un Excel de lista de precios. El sistema detecta el formato y reemplaza la lista anterior del proveedor.
+        Arrastra o selecciona todas las listas de precios (.xls / .xlsx). El sistema detecta
+        automaticamente el proveedor, normaliza los datos y carga todo. Puedes subir 16 o mas
+        archivos de una vez.
       </p>
 
       <form onSubmit={handleUpload} className="space-y-4 rounded-xl border border-border bg-surface p-5">
         <div>
-          <label className="mb-1 block text-sm text-muted">Proveedor</label>
-          <select
-            className={inputClass}
-            value={proveedorId}
-            onChange={(e) => setProveedorId(e.target.value ? Number(e.target.value) : '')}
-            required
-          >
-            <option value="">Seleccionar...</option>
-            {proveedores.map((p) => (
-              <option key={p.id} value={p.id}>{p.nombre}</option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="mb-1 block text-sm text-muted">Tipo de archivo (opcional)</label>
-          <select className={inputClass} value={tipo} onChange={(e) => setTipo(e.target.value)}>
-            <option value="">Autodetectar</option>
-            <option value="DH">DH</option>
-            <option value="CAJAS">Cajas de direccion</option>
-            <option value="LISTA_E">Lista E</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="mb-1 block text-sm text-muted">Archivo Excel (.xls / .xlsx)</label>
+          <label className="mb-1 block text-sm font-medium text-text">Archivos Excel</label>
           <input
             type="file"
             accept=".xls,.xlsx"
+            multiple
             className="w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-accent-dim file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-accent"
-            onChange={(e) => setArchivo(e.target.files?.[0] ?? null)}
-            required
+            onChange={(e) => setArchivos(Array.from(e.target.files ?? []))}
           />
+          {archivos.length > 0 && (
+            <ul className="mt-3 space-y-1 rounded-lg border border-border bg-bg p-3">
+              {archivos.map((f) => (
+                <li key={f.name} className="text-sm text-muted">
+                  {f.name}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         {error && <p className="text-sm text-danger">{error}</p>}
         {result && <p className="text-sm text-accent">{result}</p>}
 
+        {detalle && detalle.resultados.length > 0 && (
+          <div className="rounded-lg border border-border bg-bg p-3">
+            <p className="mb-2 text-xs font-medium uppercase text-muted">Procesados</p>
+            <ul className="space-y-1">
+              {detalle.resultados.map((r) => (
+                <li key={r.lista_id} className="text-sm text-text">
+                  {r.archivo} — {r.registros_cargados.toLocaleString('es-CO')} repuestos
+                  {r.proveedor && <span className="text-muted"> ({r.proveedor})</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {detalle && detalle.errores.length > 0 && (
+          <div className="rounded-lg border border-danger/30 bg-danger/10 p-3">
+            <p className="mb-2 text-xs font-medium uppercase text-danger">Errores</p>
+            <ul className="space-y-1">
+              {detalle.errores.map((e) => (
+                <li key={e.archivo} className="text-sm text-danger">
+                  {e.archivo}: {e.error}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <button
           type="submit"
-          disabled={uploading}
+          disabled={uploading || archivos.length === 0}
           className="rounded-lg bg-accent-dim px-5 py-2.5 text-sm font-semibold text-white hover:bg-accent disabled:opacity-50"
         >
-          {uploading ? 'Procesando...' : 'Cargar lista'}
+          {uploading
+            ? `Procesando ${archivos.length} archivo(s)...`
+            : `Cargar ${archivos.length || ''} lista(s)`.trim()}
         </button>
       </form>
     </div>

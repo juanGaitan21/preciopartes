@@ -75,7 +75,18 @@ export interface UploadResponse {
   ok: boolean
   lista_id: number
   archivo: string
+  proveedor?: string
   registros_cargados: number
   fecha_lista: string | null
+  mensaje: string
+}
+
+export interface BatchUploadResponse {
+  ok: boolean
+  archivos_ok: number
+  archivos_error: number
+  total_registros: number
+  resultados: UploadResponse[]
+  errores: { archivo: string; error: string }[]
   mensaje: string
 }

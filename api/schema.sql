@@ -138,7 +138,8 @@ WHERE l.activa = true AND pr.activo = true;
 INSERT INTO proveedores (nombre) VALUES
     ('DH Repuestos Corea'),
     ('DH Soportes'),
-    ('Cajas de Dirección')
+    ('Cajas de Dirección'),
+    ('Lista Precio E')
 ON CONFLICT (nombre) DO NOTHING;
 
 -- -------------------------------------------------------

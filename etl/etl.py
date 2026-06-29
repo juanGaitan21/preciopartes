@@ -180,6 +180,36 @@ def detectar_tipo(path: Path, df_primera_hoja: pd.DataFrame) -> str:
     return TIPO_DESCONOCIDO
 
 
+def detectar_proveedor_nombre(path: Path, tipo: Optional[str] = None) -> str:
+    """
+    Infiere el proveedor a partir del nombre del archivo y/o tipo ETL detectado.
+    """
+    nombre = path.name.upper().replace(" ", "")
+
+    if "SOPORTES" in nombre:
+        return "DH Soportes"
+
+    if any(k in nombre for k in ("CAJAS", "DIRECCION", "DRIECCION")):
+        return "Cajas de Dirección"
+
+    if "LISTAPRECIO" in nombre or tipo == TIPO_LISTA_E:
+        return "Lista Precio E"
+
+    if "COREA" in nombre or ("DH_" in nombre and "SOPORTES" not in nombre):
+        return "DH Repuestos Corea"
+
+    if tipo == TIPO_DH:
+        return "DH Repuestos Corea"
+    if tipo == TIPO_CAJAS:
+        return "Cajas de Dirección"
+    if tipo == TIPO_LISTA_E:
+        return "Lista Precio E"
+
+    # Fallback: nombre legible del archivo
+    stem = re.sub(r"[_\-]+", " ", path.stem).strip()
+    return stem[:80] if stem else "Proveedor desconocido"
+
+
 # ---------------------------------------------------------------------------
 # Parsers por tipo
 # ---------------------------------------------------------------------------
@@ -477,6 +507,9 @@ def procesar_archivo(
         except Exception as e:
             logger.error(f"Error leyendo preview de {path.name}: {e}")
             return []
+
+    if not proveedor_nombre or proveedor_nombre.startswith("proveedor_"):
+        proveedor_nombre = detectar_proveedor_nombre(path, tipo)
 
     logger.info(f"Procesando {path.name} | tipo={tipo} | proveedor={proveedor_nombre} | fecha={fecha_lista}")
 

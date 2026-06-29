@@ -13,7 +13,7 @@ import logging
 import os
 from datetime import date
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import asyncpg
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
@@ -232,62 +232,65 @@ async def buscar(
     }
 
 
-@app.post("/api/listas/upload")
-async def upload_lista(
-    archivo: UploadFile = File(...),
-    proveedor_id: int = Form(...),
-    tipo: Optional[str] = Form(None),
-    user: dict = Depends(require_permission("upload")),
-):
-    """
-    Sube un nuevo Excel de lista de precios.
-    - Corre el ETL automáticamente
-    - Guarda todos los registros en la DB
-    - Desactiva la lista anterior del mismo proveedor
-    - Retorna resumen del proceso
-    """
-    subido_por = user["nombre"]
-    ext = Path(archivo.filename).suffix.lower()
+async def get_or_create_proveedor(conn, nombre: str) -> int:
+    """Obtiene el ID del proveedor o lo crea si no existe."""
+    pid = await conn.fetchval(
+        "SELECT id FROM proveedores WHERE nombre = $1", nombre
+    )
+    if pid:
+        return pid
+    return await conn.fetchval(
+        "INSERT INTO proveedores (nombre) VALUES ($1) RETURNING id", nombre
+    )
+
+
+async def _guardar_lista_desde_archivo(
+    pool,
+    content: bytes,
+    filename: str,
+    subido_por: str,
+    proveedor_id: Optional[int] = None,
+    tipo: Optional[str] = None,
+) -> dict:
+    ext = Path(filename).suffix.lower()
     if ext not in (".xls", ".xlsx"):
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos .xls o .xlsx")
 
-    # Guardar temporalmente
-    tmp_path = Path(f"/tmp/{archivo.filename}")
+    tmp_path = Path(f"/tmp/{filename}")
     try:
-        content = await archivo.read()
         tmp_path.write_bytes(content)
 
-        # Correr ETL
         registros = procesar_archivo(
             path=tmp_path,
-            proveedor_nombre=f"proveedor_{proveedor_id}",  # nombre se toma de DB
+            proveedor_nombre="",
             tipo=tipo,
         )
 
         if not registros:
             raise HTTPException(
                 status_code=422,
-                detail="El archivo no contiene registros válidos. Verifica el formato."
+                detail="El archivo no contiene registros validos. Verifica el formato.",
             )
 
-        # Guardar en DB dentro de una transacción
-        async with app.state.pool.acquire() as conn:
+        proveedor_nombre = registros[0].get("proveedor_nombre") or "Proveedor desconocido"
+
+        async with pool.acquire() as conn:
             async with conn.transaction():
-                # Desactivar listas anteriores del proveedor
+                if proveedor_id is None:
+                    proveedor_id = await get_or_create_proveedor(conn, proveedor_nombre)
+
                 await conn.execute(
                     "UPDATE listas SET activa = false WHERE proveedor_id = $1",
-                    proveedor_id
+                    proveedor_id,
                 )
 
-                # Crear nueva lista
                 fecha_lista = registros[0].get("fecha_lista")
                 lista_id = await conn.fetchval(
                     """INSERT INTO listas (proveedor_id, archivo_nombre, fecha_lista, subido_por)
                        VALUES ($1, $2, $3, $4) RETURNING id""",
-                    proveedor_id, archivo.filename, fecha_lista, subido_por
+                    proveedor_id, filename, fecha_lista, subido_por,
                 )
 
-                # Insertar registros en batch
                 await conn.executemany(
                     """INSERT INTO partes
                         (lista_id, proveedor_id, referencia, referencia_norm, equivalencia,
@@ -313,32 +316,94 @@ async def upload_lista(
                             r["sheet_origen"],
                         )
                         for r in registros
-                    ]
+                    ],
                 )
 
-                # Actualizar contador
                 await conn.execute(
                     "UPDATE listas SET total_registros = $1 WHERE id = $2",
-                    len(registros), lista_id
+                    len(registros), lista_id,
                 )
 
         return {
             "ok": True,
             "lista_id": lista_id,
-            "archivo": archivo.filename,
+            "archivo": filename,
+            "proveedor": proveedor_nombre,
             "registros_cargados": len(registros),
             "fecha_lista": str(fecha_lista) if fecha_lista else None,
-            "mensaje": f"✅ {len(registros):,} repuestos cargados correctamente",
+            "mensaje": f"{len(registros):,} repuestos cargados ({proveedor_nombre})",
         }
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"Error procesando {archivo.filename}: {e}")
-        raise HTTPException(status_code=500, detail=f"Error procesando el archivo: {str(e)}")
     finally:
         if tmp_path.exists():
             tmp_path.unlink()
+
+
+@app.post("/api/listas/upload")
+async def upload_lista(
+    archivo: UploadFile = File(...),
+    proveedor_id: Optional[int] = Form(None),
+    tipo: Optional[str] = Form(None),
+    user: dict = Depends(require_permission("upload")),
+):
+    """
+    Sube un Excel de lista de precios. Proveedor y formato se autodetectan si no se envian.
+    """
+    content = await archivo.read()
+    return await _guardar_lista_desde_archivo(
+        app.state.pool,
+        content,
+        archivo.filename,
+        user["nombre"],
+        proveedor_id=proveedor_id,
+        tipo=tipo,
+    )
+
+
+@app.post("/api/listas/upload-batch")
+async def upload_listas_batch(
+    archivos: List[UploadFile] = File(...),
+    user: dict = Depends(require_permission("upload")),
+):
+    """
+    Sube varios Excel a la vez. Cada archivo: autodetecta proveedor, formato ETL y normaliza.
+    """
+    if not archivos:
+        raise HTTPException(status_code=400, detail="No se enviaron archivos")
+
+    resultados = []
+    errores = []
+
+    for archivo in archivos:
+        try:
+            content = await archivo.read()
+            res = await _guardar_lista_desde_archivo(
+                app.state.pool,
+                content,
+                archivo.filename,
+                user["nombre"],
+            )
+            resultados.append(res)
+        except HTTPException as e:
+            errores.append({"archivo": archivo.filename, "error": e.detail})
+        except Exception as e:
+            logger.exception(f"Error procesando {archivo.filename}: {e}")
+            errores.append({"archivo": archivo.filename, "error": str(e)})
+
+    total_registros = sum(r["registros_cargados"] for r in resultados)
+
+    return {
+        "ok": len(errores) == 0,
+        "archivos_ok": len(resultados),
+        "archivos_error": len(errores),
+        "total_registros": total_registros,
+        "resultados": resultados,
+        "errores": errores,
+        "mensaje": (
+            f"{len(resultados)} archivo(s) procesados, {total_registros:,} repuestos cargados"
+            + (f", {len(errores)} con error" if errores else "")
+        ),
+    }
 
 
 @app.get("/api/proveedores")
