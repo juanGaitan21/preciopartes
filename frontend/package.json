@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "start": "serve dist -s -l tcp://0.0.0.0:${PORT:-3000}",
     "lint": "oxlint",
     "preview": "vite preview"
   },
