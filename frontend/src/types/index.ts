@@ -19,6 +19,7 @@ export interface ResultadoBusqueda {
   referencia_norm: string
   descripcion: string
   vehiculo: string
+  marca_vehiculo: string
   precio: number
   precio_con_desc: number
   descuento_pct: number

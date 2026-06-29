@@ -21,7 +21,10 @@ function ResultRow({ item }: { item: ResultadoBusqueda }) {
     <tr className={`border-b border-border transition-colors hover:bg-surface-hover ${isCheapest ? 'bg-accent-dim/5' : ''}`}>
       <td className="px-4 py-3 text-sm font-mono text-muted">{item.referencia}</td>
       <td className="px-4 py-3 text-sm text-text">{item.descripcion}</td>
-      <td className="hidden px-4 py-3 text-sm text-muted md:table-cell">{item.vehiculo || EMPTY}</td>
+      <td className="hidden px-4 py-3 text-sm text-muted md:table-cell">
+        {item.marca_vehiculo || EMPTY}
+      </td>
+      <td className="hidden px-4 py-3 text-sm text-muted lg:table-cell">{item.vehiculo || EMPTY}</td>
       <td className="px-4 py-3 text-sm text-muted">{item.proveedor}</td>
       <td className="px-4 py-3 text-right text-sm">
         {item.descuento_pct > 0 && (
@@ -162,7 +165,8 @@ export function ComparadorPage() {
                   <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted">
                     <th className="px-4 py-3 font-medium">Referencia</th>
                     <th className="px-4 py-3 font-medium">Descripcion</th>
-                    <th className="hidden px-4 py-3 font-medium md:table-cell">Vehiculo</th>
+                    <th className="hidden px-4 py-3 font-medium md:table-cell">Marca</th>
+                    <th className="hidden px-4 py-3 font-medium lg:table-cell">Vehiculo</th>
                     <th className="px-4 py-3 font-medium">Proveedor</th>
                     <th className="px-4 py-3 text-right font-medium">Precio</th>
                     <th className="hidden px-4 py-3 text-right font-medium lg:table-cell">Dif. vs minimo</th>

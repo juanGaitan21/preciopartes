@@ -134,6 +134,7 @@ async def buscar(
             OR upper(p.referencia)      LIKE ${idx}
             OR upper(p.referencia_norm) LIKE ${idx}
             OR upper(p.vehiculo)        LIKE ${idx}
+            OR upper(p.marca_vehiculo)  LIKE ${idx}
             OR upper(pr.nombre)         LIKE ${idx}
         )""")
         params.append(t)
@@ -160,6 +161,7 @@ async def buscar(
                 p.referencia_norm,
                 p.descripcion,
                 p.vehiculo,
+                p.marca_vehiculo,
                 p.precio::float,
                 p.precio_con_desc::float,
                 p.descuento_pct::float,
@@ -185,6 +187,7 @@ async def buscar(
                 p.referencia_norm,
                 p.descripcion,
                 p.vehiculo,
+                p.marca_vehiculo,
                 p.precio::float,
                 p.precio_con_desc::float,
                 p.descuento_pct::float,

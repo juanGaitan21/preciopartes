@@ -285,7 +285,7 @@ def _parse_lista_e(path: Path, proveedor_nombre: str, fecha_lista: Optional[date
                 referencia_raw=ref_raw,
                 descripcion_raw=row.get(col_map.get("descripcion", ""), ""),
                 precio_raw=precio_raw,
-                vehiculo_raw=marca,
+                vehiculo_raw="",
                 marca_vehiculo_raw=marca,
                 fecha_lista=fecha_lista,
                 archivo_origen=path.name,
