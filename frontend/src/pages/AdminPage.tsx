@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import type { BatchUploadResponse, Lista, Rol, User } from '../types'
 
@@ -317,21 +318,36 @@ function CargarListasSection() {
         {result && <p className="text-sm text-accent">{result}</p>}
 
         {detalle && detalle.resultados.length > 0 && (
-          <div className="rounded-lg border border-border bg-bg p-3">
-            <p className="mb-2 text-xs font-medium uppercase text-muted">Cargados correctamente</p>
-            <ul className="space-y-1">
-              {detalle.resultados.map((r) => (
-                <li key={r.lista_id} className="text-sm text-text">
-                  <span className="font-medium">{r.archivo}</span>
-                  {' — '}
-                  {r.registros_cargados.toLocaleString('es-CO')} repuestos
-                  {r.proveedor && <span className="text-muted"> ({r.proveedor})</span>}
-                  {r.tipo_detectado && (
-                    <span className="ml-1 text-xs text-accent">formato {r.tipo_detectado}</span>
-                  )}
-                </li>
-              ))}
-            </ul>
+          <div className="space-y-3">
+            <div className="rounded-lg border border-accent/30 bg-accent/10 p-4">
+              <p className="text-sm font-medium text-accent">Carga completada</p>
+              <p className="mt-1 text-sm text-muted">
+                Los repuestos ya estan en la base de datos. Ve al Comparador para buscar.
+              </p>
+              <Link
+                to="/comparador"
+                className="mt-3 inline-block rounded-lg bg-accent-dim px-4 py-2 text-sm font-semibold text-white hover:bg-accent"
+              >
+                Ir al Comparador
+              </Link>
+            </div>
+
+            <div className="rounded-lg border border-border bg-bg p-3">
+              <p className="mb-2 text-xs font-medium uppercase text-muted">Detalle por archivo</p>
+              <ul className="space-y-1">
+                {detalle.resultados.map((r) => (
+                  <li key={r.lista_id} className="text-sm text-text">
+                    <span className="font-medium">{r.archivo}</span>
+                    {' — '}
+                    {r.registros_cargados.toLocaleString('es-CO')} repuestos
+                    {r.proveedor && <span className="text-muted"> ({r.proveedor})</span>}
+                    {r.tipo_detectado && (
+                      <span className="ml-1 text-xs text-accent">formato {r.tipo_detectado}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         )}
 
@@ -345,17 +361,6 @@ function CargarListasSection() {
                 <li key={e.archivo} className="text-sm">
                   <p className="font-medium text-danger">{e.archivo}</p>
                   <p className="mt-0.5 text-muted">{e.mensaje}</p>
-                  {e.tipo_detectado && (
-                    <p className="mt-0.5 text-xs text-muted">
-                      Formato detectado: {e.tipo_detectado}
-                    </p>
-                  )}
-                  {e.requiere_reglas_etl && (
-                    <p className="mt-1 rounded bg-bg px-2 py-1 text-xs text-warning">
-                      Copia este archivo a la carpeta listas/ del proyecto y avisa al administrador
-                      para agregar reglas ETL.
-                    </p>
-                  )}
                 </li>
               ))}
             </ul>
@@ -369,7 +374,9 @@ function CargarListasSection() {
         >
           {uploading
             ? `Procesando ${archivos.length} archivo(s)...`
-            : `Cargar ${archivos.length || ''} lista(s)`.trim()}
+            : detalle
+              ? 'Subir otra tanda (selecciona archivos arriba)'
+              : `Cargar ${archivos.length} lista(s)`}
         </button>
       </form>
     </div>

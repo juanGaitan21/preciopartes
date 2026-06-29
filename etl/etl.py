@@ -95,30 +95,50 @@ def _mapear_columnas(df: pd.DataFrame) -> dict:
 
 
 def detectar_tipo(path: Path, df_primera_hoja: pd.DataFrame) -> str:
+    """Detecta formato: primero por nombre de archivo, luego por contenido."""
+    compacto = _nombre_compacto(path)
+
+    # Nombre del archivo (mas confiable para las 4 listas conocidas)
+    if "LISTAPRECIO" in compacto:
+        return TIPO_LISTA_E
+    if any(k in compacto for k in ("CAJAS", "DIRECCION", "DRIECCION")):
+        return TIPO_CAJAS
+    if "DH4350" in compacto or (
+        compacto.startswith("DH") and ("COREA" in compacto or "SOPORTES" in compacto)
+    ):
+        return TIPO_DH
+
     cols = [str(c).strip().upper() for c in df_primera_hoja.columns]
     cols_str = " ".join(cols)
     primeras_filas = " ".join(
         df_primera_hoja.iloc[:12].astype(str).values.flatten().tolist()
     ).upper()
 
+    # Lista E: CODIGO + (MARCA o GRUPO)
+    if ("CODIGO" in primeras_filas or "CÓDIGO" in primeras_filas) and (
+        "GRUPO" in primeras_filas or "MARCA" in primeras_filas
+    ):
+        return TIPO_LISTA_E
+    if "CODIGO" in cols_str or "CÓDIGO" in cols_str:
+        return TIPO_LISTA_E
+
+    # Cajas: COD.UR o columna descuento
+    if "COD.UR" in primeras_filas or "CODUR" in primeras_filas.replace(".", ""):
+        return TIPO_CAJAS
+    if "REFERENCIA" in primeras_filas and "PRECIO" in primeras_filas and "DESCUENTO" in primeras_filas:
+        return TIPO_CAJAS
+
+    # DH: VEHICULO + REFERENCIA (+ EQUIVALENCIA)
     if "VEHICULO" in cols_str and "REFERENCIA" in cols_str:
         return TIPO_DH
     if "REFERENCIA" in primeras_filas and "PRECIO" in primeras_filas and (
         "VEHICULO" in primeras_filas or "EQUIVALENCIA" in primeras_filas
     ):
         return TIPO_DH
-    if ("COD.UR" in primeras_filas or "DESCRIPCION" in primeras_filas or "DESCRIPCIÓN" in primeras_filas) and "PRECIO" in primeras_filas:
-        return TIPO_CAJAS
-    if "CODIGO" in cols_str or "CODIGO" in primeras_filas or "CÓDIGO" in primeras_filas:
-        return TIPO_LISTA_E
 
-    compacto = _nombre_compacto(path)
-    if "DH4350" in compacto or (compacto.startswith("DH") and ("COREA" in compacto or "SOPORTES" in compacto)):
-        return TIPO_DH
-    if "CAJAS" in compacto or "DIRECCION" in compacto or "DRIECCION" in compacto:
+    # CAJAS generico: descripcion + precio sin equivalencia
+    if ("DESCRIPCION" in primeras_filas or "DESCRIPCIÓN" in primeras_filas) and "PRECIO" in primeras_filas:
         return TIPO_CAJAS
-    if "LISTAPRECIO" in compacto:
-        return TIPO_LISTA_E
 
     return TIPO_DESCONOCIDO
 
