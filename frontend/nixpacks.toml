@@ -1,0 +1,12 @@
+[variables]
+NIXPACKS_NODE_VERSION = "22"
+VITE_API_URL = "https://api.trasoftvps.xyz"
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "npx --yes serve dist -s -l 80"
