@@ -13,6 +13,7 @@ from .auth import (
     hash_password,
     verify_password,
 )
+from .db_init import ADMIN_EMAIL, ensure_admin_user, is_system_admin
 from .deps import get_current_user, require_roles
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -54,6 +55,30 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
     rol: Optional[str] = None
     activo: Optional[bool] = None
+
+
+@router.post("/recover-admin")
+async def recover_admin(request: Request):
+    """
+    Restaura el admin por defecto solo si no hay ningun administrador activo.
+    Uso de emergencia cuando se desactivo el unico admin por error.
+    """
+    async with request.app.state.pool.acquire() as conn:
+        activos = await conn.fetchval(
+            "SELECT COUNT(*) FROM users WHERE rol = 'admin' AND activo = true"
+        )
+        if activos > 0:
+            raise HTTPException(
+                status_code=403,
+                detail="Ya hay administradores activos. No se requiere recuperacion.",
+            )
+        await ensure_admin_user(conn)
+
+    return {
+        "ok": True,
+        "email": ADMIN_EMAIL,
+        "mensaje": "Administrador restaurado. Usa la contraseña por defecto admin123.",
+    }
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -151,6 +176,44 @@ async def update_user(
 ):
     if body.rol and body.rol not in ROLES:
         raise HTTPException(status_code=400, detail=f"Rol inválido. Usar: {', '.join(ROLES)}")
+
+    async with request.app.state.pool.acquire() as conn:
+        target = await conn.fetchrow(
+            "SELECT id, email, rol, activo FROM users WHERE id = $1",
+            user_id,
+        )
+        if not target:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+        target_email = target["email"].lower().strip()
+        if is_system_admin(target_email):
+            if body.activo is False:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No se puede desactivar el administrador del sistema",
+                )
+            if body.rol and body.rol != "admin":
+                raise HTTPException(
+                    status_code=400,
+                    detail="No se puede cambiar el rol del administrador del sistema",
+                )
+            if body.email and body.email.lower().strip() != ADMIN_EMAIL:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No se puede cambiar el email del administrador del sistema",
+                )
+
+        if body.activo is False:
+            admins_activos = await conn.fetchval(
+                """SELECT COUNT(*) FROM users
+                   WHERE rol = 'admin' AND activo = true AND id != $1""",
+                user_id,
+            )
+            if admins_activos == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No se puede desactivar el ultimo administrador activo",
+                )
 
     fields = []
     params = []

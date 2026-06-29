@@ -73,17 +73,30 @@ def test_registro_completo():
 
 
 def test_deduplicacion():
+    # Exactamente iguales -> 1 fila
     regs = [
         {"referencia_norm": "ABC", "precio": 100, "precio_con_desc": 100, "descuento_pct": 0,
-         "referencia": "A", "descripcion": "x", "proveedor_nombre": "T"},
-        {"referencia_norm": "ABC", "precio": 90, "precio_con_desc": 90, "descuento_pct": 0,
-         "referencia": "A", "descripcion": "x", "proveedor_nombre": "T"},
+         "referencia": "A", "descripcion": "x", "vehiculo": "AVEO", "proveedor_nombre": "T"},
+        {"referencia_norm": "ABC", "precio": 100, "precio_con_desc": 100, "descuento_pct": 0,
+         "referencia": "A", "descripcion": "x", "vehiculo": "AVEO", "proveedor_nombre": "T"},
     ]
-    out = consolidar_registros(regs)
+    out, dup = consolidar_registros(regs)
     assert len(out) == 1
-    assert out[0]["precio_con_desc"] == 90
-    out2 = validar_lote(out)
-    assert len(out2) == 1
+    assert dup == 1
+
+    # Misma ref, distinto vehiculo -> conservar ambas
+    regs2 = [
+        {"referencia_norm": "ABC", "precio": 100, "precio_con_desc": 100, "descuento_pct": 0,
+         "referencia": "A", "descripcion": "x", "vehiculo": "AVEO", "proveedor_nombre": "T"},
+        {"referencia_norm": "ABC", "precio": 90, "precio_con_desc": 90, "descuento_pct": 0,
+         "referencia": "A", "descripcion": "x", "vehiculo": "CRUZE", "proveedor_nombre": "T"},
+    ]
+    out2, dup2 = consolidar_registros(regs2)
+    assert len(out2) == 2
+    assert dup2 == 0
+
+    out3 = validar_lote(out2)
+    assert len(out3) == 2
     print("  deduplicacion OK")
 
 

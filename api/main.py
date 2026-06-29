@@ -343,6 +343,8 @@ async def _guardar_lista_desde_archivo(
             "tipo_detectado": tipo_detectado,
             "registros_cargados": len(registros),
             "fecha_lista": str(fecha_lista) if fecha_lista else None,
+            "estadisticas": etl.get("estadisticas", {}),
+            "filas_descartadas": etl.get("filas_descartadas", 0),
             "mensaje": f"{len(registros):,} repuestos cargados ({proveedor_nombre}, formato {tipo_detectado})",
         }
 

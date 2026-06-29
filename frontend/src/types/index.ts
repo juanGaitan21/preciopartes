@@ -71,6 +71,14 @@ export interface UserUpdate {
   activo?: boolean
 }
 
+export interface UploadEstadisticas {
+  filas_validas_parseadas: number
+  duplicados_exactos: number
+  rechazados_validacion: number
+  filas_cargadas: number
+  filas_descartadas_total: number
+}
+
 export interface UploadResponse {
   ok: boolean
   lista_id: number
@@ -80,6 +88,8 @@ export interface UploadResponse {
   registros_cargados: number
   fecha_lista: string | null
   mensaje: string
+  estadisticas?: UploadEstadisticas
+  filas_descartadas?: number
 }
 
 export interface UploadErrorItem {

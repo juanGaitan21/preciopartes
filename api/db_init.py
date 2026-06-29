@@ -79,6 +79,38 @@ ADMIN_PASSWORD = "admin123"
 ADMIN_NOMBRE = "Administrador"
 
 
+def is_system_admin(email: str) -> bool:
+    return email.lower().strip() == ADMIN_EMAIL
+
+
+async def ensure_admin_user(conn) -> None:
+    """Crea o reactiva el usuario admin por defecto si falta o fue desactivado."""
+    row = await conn.fetchrow(
+        "SELECT id, activo, rol FROM users WHERE email = $1",
+        ADMIN_EMAIL,
+    )
+    if not row:
+        await conn.execute(
+            """INSERT INTO users (nombre, email, password_hash, rol, activo)
+               VALUES ($1, $2, $3, 'admin', true)""",
+            ADMIN_NOMBRE,
+            ADMIN_EMAIL,
+            hash_password(ADMIN_PASSWORD),
+        )
+        logger.info("Usuario admin creado: %s", ADMIN_EMAIL)
+        return
+
+    if not row["activo"] or row["rol"] != "admin":
+        await conn.execute(
+            """UPDATE users
+               SET activo = true, rol = 'admin', nombre = $2
+               WHERE email = $1""",
+            ADMIN_EMAIL,
+            ADMIN_NOMBRE,
+        )
+        logger.info("Usuario admin restaurado: %s", ADMIN_EMAIL)
+
+
 async def init_database(pool) -> None:
     """Crea tablas core (proveedores, listas, partes) + users si no existen."""
     async with pool.acquire() as conn:
@@ -98,18 +130,7 @@ async def init_database(pool) -> None:
 
         await conn.execute(USERS_SCHEMA)
 
-        exists = await conn.fetchval(
-            "SELECT 1 FROM users WHERE email = $1", ADMIN_EMAIL
-        )
-        if not exists:
-            await conn.execute(
-                """INSERT INTO users (nombre, email, password_hash, rol)
-                   VALUES ($1, $2, $3, 'admin')""",
-                ADMIN_NOMBRE,
-                ADMIN_EMAIL,
-                hash_password(ADMIN_PASSWORD),
-            )
-            logger.info("Usuario admin creado: %s", ADMIN_EMAIL)
+        await ensure_admin_user(conn)
 
         n_prov = await conn.fetchval("SELECT COUNT(*) FROM proveedores")
         n_users = await conn.fetchval("SELECT COUNT(*) FROM users")

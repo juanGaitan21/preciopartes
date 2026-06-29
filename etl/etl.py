@@ -298,16 +298,23 @@ def _parse_lista_e(path: Path, proveedor_nombre: str, fecha_lista: Optional[date
     return registros
 
 
-def _finalizar_registros(registros: list[dict], archivo: str) -> list[dict]:
+def _finalizar_registros(registros: list[dict], archivo: str) -> tuple[list[dict], dict]:
     """Consolidacion y validacion final antes de persistir."""
-    n_raw = len(registros)
-    registros = consolidar_registros(registros, archivo)
+    n_parseadas = len(registros)
+    registros, n_dup = consolidar_registros(registros, archivo)
+    n_pre_valid = len(registros)
     registros = validar_lote(registros)
-    logger.info(
-        "[%s] Lote final: %d registros (%d descartados en limpieza)",
-        archivo, len(registros), n_raw - len(registros),
-    )
-    return registros
+    n_final = len(registros)
+
+    stats = {
+        "filas_validas_parseadas": n_parseadas,
+        "duplicados_exactos": n_dup,
+        "rechazados_validacion": n_pre_valid - n_final,
+        "filas_cargadas": n_final,
+        "filas_descartadas_total": n_parseadas - n_final,
+    }
+    logger.info("[%s] Estadisticas ETL: %s", archivo, stats)
+    return registros, stats
 
 
 def procesar_archivo_detallado(
@@ -324,6 +331,7 @@ def procesar_archivo_detallado(
         "codigo_error": None,
         "mensaje": "",
         "filas_descartadas": 0,
+        "estadisticas": {},
     }
 
     if not path.exists():
@@ -383,9 +391,9 @@ def procesar_archivo_detallado(
 
     try:
         raw = parser(path, proveedor_nombre, fecha_lista)
-        n_raw = len(raw)
-        registros = _finalizar_registros(raw, path.name)
-        resultado["filas_descartadas"] = n_raw - len(registros)
+        registros, stats = _finalizar_registros(raw, path.name)
+        resultado["filas_descartadas"] = stats["filas_descartadas_total"]
+        resultado["estadisticas"] = stats
     except Exception as e:
         logger.exception("Error procesando %s: %s", path.name, e)
         resultado["codigo_error"] = "ERROR_PROCESAMIENTO"

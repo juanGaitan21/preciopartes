@@ -3,6 +3,12 @@ import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import type { BatchUploadResponse, Lista, Rol, User } from '../types'
 
+const ADMIN_SISTEMA = 'admin@preciopartes.com'
+
+function isAdminSistema(email: string) {
+  return email.toLowerCase() === ADMIN_SISTEMA
+}
+
 const ROLES: { value: Rol; label: string }[] = [
   { value: 'admin', label: 'Admin' },
   { value: 'vendedor', label: 'Vendedor' },
@@ -75,11 +81,10 @@ function UsuariosSection() {
     setError('')
     try {
       if (editing) {
-        const data: Record<string, unknown> = {
-          nombre: form.nombre,
-          email: form.email,
-          rol: form.rol,
-        }
+        const isSistema = isAdminSistema(editing.email)
+        const data: Record<string, unknown> = isSistema
+          ? { nombre: form.nombre }
+          : { nombre: form.nombre, email: form.email, rol: form.rol }
         if (form.password) data.password = form.password
         await api.updateUser(editing.id, data)
       } else {
@@ -154,6 +159,11 @@ function UsuariosSection() {
                     <span className={`text-xs font-medium ${u.activo ? 'text-accent' : 'text-danger'}`}>
                       {u.activo ? 'Activo' : 'Inactivo'}
                     </span>
+                    {isAdminSistema(u.email) && (
+                      <span className="ml-2 rounded-full bg-primary/20 px-2 py-0.5 text-xs text-primary">
+                        Sistema
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
@@ -163,12 +173,14 @@ function UsuariosSection() {
                       >
                         Editar
                       </button>
-                      <button
-                        onClick={() => toggleActivo(u)}
-                        className="rounded px-2 py-1 text-xs text-muted hover:bg-surface-hover"
-                      >
-                        {u.activo ? 'Desactivar' : 'Activar'}
-                      </button>
+                      {!isAdminSistema(u.email) && (
+                        <button
+                          onClick={() => toggleActivo(u)}
+                          className="rounded px-2 py-1 text-xs text-muted hover:bg-surface-hover"
+                        >
+                          {u.activo ? 'Desactivar' : 'Activar'}
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -184,6 +196,12 @@ function UsuariosSection() {
             <h3 className="mb-4 text-lg font-semibold text-text">
               {editing ? 'Editar usuario' : 'Nuevo usuario'}
             </h3>
+            {editing && isAdminSistema(editing.email) && (
+              <p className="mb-4 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-xs text-primary">
+                Administrador del sistema: solo puedes editar nombre y contraseña. No se puede
+                desactivar ni eliminar.
+              </p>
+            )}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="mb-1 block text-sm text-muted">Nombre</label>
@@ -202,6 +220,8 @@ function UsuariosSection() {
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                   required
+                  readOnly={!!editing && isAdminSistema(editing.email)}
+                  disabled={!!editing && isAdminSistema(editing.email)}
                 />
               </div>
               <div>
@@ -222,6 +242,7 @@ function UsuariosSection() {
                   className={inputClass}
                   value={form.rol}
                   onChange={(e) => setForm({ ...form, rol: e.target.value as Rol })}
+                  disabled={!!editing && isAdminSistema(editing.email)}
                 >
                   {ROLES.map((r) => (
                     <option key={r.value} value={r.value}>{r.label}</option>
@@ -343,6 +364,17 @@ function CargarListasSection() {
                     {r.proveedor && <span className="text-muted"> ({r.proveedor})</span>}
                     {r.tipo_detectado && (
                       <span className="ml-1 text-xs text-accent">formato {r.tipo_detectado}</span>
+                    )}
+                    {r.estadisticas && r.estadisticas.filas_descartadas_total > 0 && (
+                      <span className="mt-0.5 block text-xs text-muted">
+                        {r.estadisticas.filas_validas_parseadas.toLocaleString('es-CO')} filas leídas
+                        {r.estadisticas.duplicados_exactos > 0 &&
+                          ` · ${r.estadisticas.duplicados_exactos.toLocaleString('es-CO')} duplicadas`}
+                        {r.estadisticas.rechazados_validacion > 0 &&
+                          ` · ${r.estadisticas.rechazados_validacion.toLocaleString('es-CO')} rechazadas`}
+                        {' · '}
+                        {r.estadisticas.filas_descartadas_total.toLocaleString('es-CO')} descartadas en total
+                      </span>
                     )}
                   </li>
                 ))}

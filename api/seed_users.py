@@ -37,16 +37,25 @@ async def main():
         admin_hash = hash_password("admin123")
         await conn.execute(
             """
-            INSERT INTO users (nombre, email, password_hash, rol)
-            VALUES ($1, $2, $3, 'admin')
-            ON CONFLICT (email) DO NOTHING
+            INSERT INTO users (nombre, email, password_hash, rol, activo)
+            VALUES ($1, $2, $3, 'admin', true)
+            ON CONFLICT (email) DO UPDATE SET
+                activo = true,
+                rol = 'admin',
+                nombre = EXCLUDED.nombre
             """,
             "Administrador",
             "admin@preciopartes.com",
             admin_hash,
         )
         count = await conn.fetchval("SELECT COUNT(*) FROM users")
-        print(f"✅ Tabla users lista. Total usuarios: {count}")
+        admin = await conn.fetchrow(
+            "SELECT email, activo, rol FROM users WHERE email = $1",
+            "admin@preciopartes.com",
+        )
+        print(f"✅ Admin restaurado: {admin['email']} (activo={admin['activo']}, rol={admin['rol']})")
+        print(f"   Contraseña: admin123")
+        print(f"   Total usuarios: {count}")
     finally:
         await conn.close()
 

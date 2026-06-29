@@ -179,8 +179,7 @@ def es_fila_basura(referencia: str, descripcion: str, referencia_norm: str) -> b
         return True
     if not descripcion or len(descripcion) < 2:
         return True
-    # Solo simbolos o numeros sueltos sin sentido como referencia
-    if re.fullmatch(r"[\d\s\.\-]+", referencia) and len(referencia_norm) < 4:
+    if re.fullmatch(r"[\d\s.\-]+", referencia) and len(referencia_norm) < 4:
         return True
     return False
 
@@ -203,6 +202,9 @@ def construir_registro(
     """Construye y valida un registro unificado. Retorna None si la fila no es valida."""
     referencia = limpiar_referencia(referencia_raw)
     descripcion = limpiar_texto(descripcion_raw)
+    # Si no hay descripcion, usar referencia (comun en algunas listas)
+    if not descripcion or len(descripcion) < 2:
+        descripcion = referencia
     referencia_norm = normalizar_referencia(referencia)
 
     if es_fila_basura(referencia, descripcion, referencia_norm):
@@ -237,30 +239,32 @@ def construir_registro(
     }
 
 
-def consolidar_registros(registros: list[dict], archivo: str = "") -> list[dict]:
+def consolidar_registros(registros: list[dict], archivo: str = "") -> tuple[list[dict], int]:
     """
-    Elimina duplicados por referencia_norm dentro del mismo archivo.
-    Si hay duplicado, conserva el precio_con_desc mas bajo (mejor para comparador).
+    Elimina solo filas EXACTAMENTE iguales (misma ref + vehiculo + desc + precio).
+    NO colapsa la misma referencia en distintos vehiculos — eso es normal en listas DH.
     """
-    mejor: dict[str, dict] = {}
+    vistos: set[tuple] = set()
+    unicos: list[dict] = []
     duplicados = 0
 
     for reg in registros:
-        key = reg["referencia_norm"]
-        if key not in mejor:
-            mejor[key] = reg
+        key = (
+            reg["referencia_norm"],
+            reg.get("vehiculo", "").upper().strip(),
+            reg.get("descripcion", "").upper().strip(),
+            reg["precio_con_desc"],
+        )
+        if key in vistos:
+            duplicados += 1
             continue
-        duplicados += 1
-        if reg["precio_con_desc"] < mejor[key]["precio_con_desc"]:
-            mejor[key] = reg
+        vistos.add(key)
+        unicos.append(reg)
 
     if duplicados:
-        logger.info(
-            "[%s] %d filas duplicadas consolidadas (se conservo menor precio)",
-            archivo, duplicados,
-        )
+        logger.info("[%s] %d filas exactamente duplicadas omitidas", archivo, duplicados)
 
-    return list(mejor.values())
+    return unicos, duplicados
 
 
 def validar_lote(registros: list[dict]) -> list[dict]:
