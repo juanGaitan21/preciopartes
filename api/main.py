@@ -7,6 +7,7 @@ Endpoints:
     GET  /api/proveedores         — Lista proveedores activos
     GET  /api/listas              — Historial de listas subidas
     DELETE /api/listas/{id}       — Desactiva una lista (no borra datos)
+    POST   /api/listas/{id}/activar — Reactiva una lista (desactiva las demas del mismo proveedor)
 """
 
 import logging
@@ -478,3 +479,32 @@ async def desactivar_lista(
     if result == "UPDATE 0":
         raise HTTPException(status_code=404, detail="Lista no encontrada")
     return {"ok": True, "mensaje": f"Lista {lista_id} desactivada"}
+
+
+@app.post("/api/listas/{lista_id}/activar")
+async def activar_lista(
+    lista_id: int,
+    _: dict = Depends(require_roles("admin")),
+):
+    async with app.state.pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                "SELECT id, proveedor_id, archivo_nombre FROM listas WHERE id = $1",
+                lista_id,
+            )
+            if not row:
+                raise HTTPException(status_code=404, detail="Lista no encontrada")
+
+            await conn.execute(
+                "UPDATE listas SET activa = false WHERE proveedor_id = $1",
+                row["proveedor_id"],
+            )
+            await conn.execute(
+                "UPDATE listas SET activa = true WHERE id = $1",
+                lista_id,
+            )
+
+    return {
+        "ok": True,
+        "mensaje": f"Lista '{row['archivo_nombre']}' activada (otras del mismo proveedor quedaron inactivas)",
+    }

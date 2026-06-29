@@ -152,6 +152,9 @@ export const api = {
   desactivarLista: (listaId: number) =>
     request<{ ok: boolean; mensaje: string }>(`/api/listas/${listaId}`, { method: 'DELETE' }),
 
+  activarLista: (listaId: number) =>
+    request<{ ok: boolean; mensaje: string }>(`/api/listas/${listaId}/activar`, { method: 'POST' }),
+
   listUsers: () => request<User[]>('/auth/users'),
 
   createUser: (data: UserCreate) =>

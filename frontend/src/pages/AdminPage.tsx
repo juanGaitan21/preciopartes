@@ -440,12 +440,22 @@ function HistorialSection() {
   useEffect(() => { load() }, [load])
 
   const desactivar = async (id: number) => {
-    if (!confirm('Desactivar esta lista?')) return
+    if (!confirm('Desactivar esta lista? Dejara de aparecer en el Comparador.')) return
     try {
       await api.desactivarLista(id)
       await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al desactivar')
+    }
+  }
+
+  const activar = async (id: number, archivo: string) => {
+    if (!confirm(`Activar "${archivo}"? Las demas listas del mismo proveedor quedaran inactivas.`)) return
+    try {
+      await api.activarLista(id)
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al activar')
     }
   }
 
@@ -487,12 +497,19 @@ function HistorialSection() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    {l.activa && (
+                    {l.activa ? (
                       <button
                         onClick={() => desactivar(l.id)}
                         className="rounded px-2 py-1 text-xs text-danger hover:bg-danger/10"
                       >
                         Desactivar
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => activar(l.id, l.archivo_nombre)}
+                        className="rounded px-2 py-1 text-xs text-accent hover:bg-accent/10"
+                      >
+                        Activar
                       </button>
                     )}
                   </td>
