@@ -143,6 +143,24 @@ def limpiar_texto(val) -> str:
     return " ".join(str(val).strip().split())  # colapsa espacios múltiples
 
 
+def _nombre_compacto(path: Path) -> str:
+    """Nombre de archivo sin espacios, guiones ni simbolos (para deteccion)."""
+    return re.sub(r"[\s_\-\+]+", "", path.name.upper())
+
+
+def _buscar_fila_encabezado(df_raw: pd.DataFrame, marcadores: tuple = ("REFERENCIA", "PRECIO")) -> Optional[int]:
+    """Encuentra la fila que contiene columnas tipo REFERENCIA + PRECIO."""
+    for i, row in df_raw.iterrows():
+        vals = " ".join(str(v).strip().upper() for v in row.values)
+        if all(m in vals for m in marcadores):
+            return int(i)
+        if "REFERENCIA" in vals and "PRECIO" in vals:
+            return int(i)
+        if "CODIGO" in vals and "PRECIO" in vals:
+            return int(i)
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Detección de tipo de archivo
 # ---------------------------------------------------------------------------
@@ -162,19 +180,24 @@ def detectar_tipo(path: Path, df_primera_hoja: pd.DataFrame) -> str:
     if "VEHICULO" in cols_str and "REFERENCIA" in cols_str and "EQUIVALENCIA" in cols_str:
         return TIPO_DH
 
-    if "COD.UR" in primeras_filas or "DESCRIPCIÓN" in primeras_filas and "PRECIO" in primeras_filas:
+    if "REFERENCIA" in primeras_filas and "PRECIO" in primeras_filas and (
+        "VEHICULO" in primeras_filas or "EQUIVALENCIA" in primeras_filas
+    ):
+        return TIPO_DH
+
+    if ("COD.UR" in primeras_filas or "DESCRIPCION" in primeras_filas or "DESCRIPCIÓN" in primeras_filas) and "PRECIO" in primeras_filas:
         return TIPO_CAJAS
 
     if "CODIGO" in cols_str or "CODIGO" in primeras_filas:
         return TIPO_LISTA_E
 
-    # Fallback: revisar nombre del archivo
-    nombre = path.name.upper()
-    if "DH_" in nombre:
+    # Fallback: revisar nombre del archivo (con o sin espacios/guiones)
+    compacto = _nombre_compacto(path)
+    if "DH4350" in compacto or (compacto.startswith("DH") and ("COREA" in compacto or "SOPORTES" in compacto)):
         return TIPO_DH
-    if "CAJAS" in nombre or "DIRECCION" in nombre:
+    if "CAJAS" in compacto or "DIRECCION" in compacto or "DRIECCION" in compacto:
         return TIPO_CAJAS
-    if "LISTA" in nombre or "PRECIO" in nombre:
+    if "LISTAPRECIO" in compacto:
         return TIPO_LISTA_E
 
     return TIPO_DESCONOCIDO
@@ -184,7 +207,7 @@ def detectar_proveedor_nombre(path: Path, tipo: Optional[str] = None) -> str:
     """
     Infiere el proveedor a partir del nombre del archivo y/o tipo ETL detectado.
     """
-    nombre = path.name.upper().replace(" ", "")
+    nombre = _nombre_compacto(path)
 
     if "SOPORTES" in nombre:
         return "DH Soportes"
@@ -195,7 +218,7 @@ def detectar_proveedor_nombre(path: Path, tipo: Optional[str] = None) -> str:
     if "LISTAPRECIO" in nombre or tipo == TIPO_LISTA_E:
         return "Lista Precio E"
 
-    if "COREA" in nombre or ("DH_" in nombre and "SOPORTES" not in nombre):
+    if "COREA" in nombre or ("DH4350" in nombre and "SOPORTES" not in nombre):
         return "DH Repuestos Corea"
 
     if tipo == TIPO_DH:
@@ -225,9 +248,21 @@ def _parse_dh(path: Path, proveedor_nombre: str, fecha_lista: Optional[date]) ->
 
     for sheet in xl.sheet_names:
         try:
-            df = pd.read_excel(path, sheet_name=sheet, engine=engine, header=0)
+            df_raw = pd.read_excel(path, sheet_name=sheet, engine=engine, header=None)
         except Exception as e:
             logger.error(f"[DH] Error leyendo hoja '{sheet}' de {path.name}: {e}")
+            continue
+
+        header_row = _buscar_fila_encabezado(df_raw, ("REFERENCIA", "PRECIO"))
+        if header_row is None:
+            header_row = _buscar_fila_encabezado(df_raw, ("VEHICULO", "REFERENCIA"))
+        if header_row is None:
+            header_row = 0
+
+        try:
+            df = pd.read_excel(path, sheet_name=sheet, engine=engine, header=header_row)
+        except Exception as e:
+            logger.error(f"[DH] Error re-leyendo hoja '{sheet}' header={header_row}: {e}")
             continue
 
         # Mapear columnas flexiblemente (los archivos pueden tener distintos nombres)
