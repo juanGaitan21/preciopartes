@@ -135,6 +135,7 @@ async def buscar(
             OR upper(p.referencia_norm) LIKE ${idx}
             OR upper(p.vehiculo)        LIKE ${idx}
             OR upper(p.marca_vehiculo)  LIKE ${idx}
+            OR upper(p.equivalencia)    LIKE ${idx}
             OR upper(pr.nombre)         LIKE ${idx}
         )""")
         params.append(t)
@@ -159,6 +160,7 @@ async def buscar(
             SELECT DISTINCT ON (p.referencia_norm)
                 p.referencia,
                 p.referencia_norm,
+                p.equivalencia,
                 p.descripcion,
                 p.vehiculo,
                 p.marca_vehiculo,
@@ -185,6 +187,7 @@ async def buscar(
             SELECT
                 p.referencia,
                 p.referencia_norm,
+                p.equivalencia,
                 p.descripcion,
                 p.vehiculo,
                 p.marca_vehiculo,
@@ -232,8 +235,13 @@ async def buscar(
     return {
         "total": len(rows),
         "termino": q,
-        "resultados": [dict(r) for r in rows],
+        "resultados": [_enriquecer_busqueda(dict(r)) for r in rows],
     }
+
+
+def _enriquecer_busqueda(row: dict) -> dict:
+    from display import enriquecer_resultado
+    return enriquecer_resultado(row)
 
 
 async def get_or_create_proveedor(conn, nombre: str) -> int:

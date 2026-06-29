@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import type { ResultadoBusqueda } from '../types'
+import { marcaLabel, pctMasCaro, vehiculoLabel } from '../utils/repuestoDisplay'
 
 const EMPTY = '-'
 const DEBOUNCE_MS = 350
@@ -16,15 +17,21 @@ function formatCOP(value: number) {
 
 function ResultRow({ item }: { item: ResultadoBusqueda }) {
   const isCheapest = item.rank_precio === 1
+  const marca = marcaLabel(item)
+  const vehiculo = vehiculoLabel(item)
+  const pct = pctMasCaro(item)
 
   return (
     <tr className={`border-b border-border transition-colors hover:bg-surface-hover ${isCheapest ? 'bg-accent-dim/5' : ''}`}>
-      <td className="px-4 py-3 text-sm font-mono text-muted">{item.referencia}</td>
-      <td className="px-4 py-3 text-sm text-text">{item.descripcion}</td>
-      <td className="hidden px-4 py-3 text-sm text-muted md:table-cell">
-        {item.marca_vehiculo || EMPTY}
+      <td className="px-4 py-3 text-sm">
+        <div className="font-mono text-muted">{item.referencia}</div>
+        {item.equivalencia && (
+          <div className="mt-0.5 text-xs text-muted/80">Equiv: {item.equivalencia}</div>
+        )}
       </td>
-      <td className="hidden px-4 py-3 text-sm text-muted lg:table-cell">{item.vehiculo || EMPTY}</td>
+      <td className="px-4 py-3 text-sm text-text">{item.descripcion}</td>
+      <td className="hidden px-4 py-3 text-sm text-muted md:table-cell">{marca || EMPTY}</td>
+      <td className="hidden px-4 py-3 text-sm text-muted lg:table-cell">{vehiculo || EMPTY}</td>
       <td className="px-4 py-3 text-sm text-muted">{item.proveedor}</td>
       <td className="px-4 py-3 text-right text-sm">
         {item.descuento_pct > 0 && (
@@ -41,9 +48,12 @@ function ResultRow({ item }: { item: ResultadoBusqueda }) {
           </span>
         )}
       </td>
-      <td className="hidden px-4 py-3 text-right text-sm lg:table-cell">
+      <td className="hidden px-4 py-3 text-right text-sm xl:table-cell">
         {!isCheapest && item.diferencia_vs_minimo > 0 ? (
-          <span className="text-warning">+{formatCOP(item.diferencia_vs_minimo)}</span>
+          <div>
+            <span className="text-warning">+{formatCOP(item.diferencia_vs_minimo)}</span>
+            {pct && <span className="mt-0.5 block text-xs text-muted">{pct}</span>}
+          </div>
         ) : (
           <span className="text-muted">{EMPTY}</span>
         )}
@@ -118,7 +128,7 @@ export function ComparadorPage() {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Referencia, descripcion, vehiculo (ej: renault kwid, bujia)..."
+            placeholder="Referencia, descripcion, marca o vehiculo (ej: hyundai, soporte, bujia)..."
             autoComplete="off"
             className="w-full rounded-lg border border-border bg-bg px-3 py-2.5 text-sm text-text outline-none focus:border-primary"
           />
@@ -160,7 +170,7 @@ export function ComparadorPage() {
 
           {!loading && resultados.length > 0 && (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px]">
+              <table className="w-full min-w-[720px]">
                 <thead>
                   <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted">
                     <th className="px-4 py-3 font-medium">Referencia</th>
@@ -169,7 +179,7 @@ export function ComparadorPage() {
                     <th className="hidden px-4 py-3 font-medium lg:table-cell">Vehiculo</th>
                     <th className="px-4 py-3 font-medium">Proveedor</th>
                     <th className="px-4 py-3 text-right font-medium">Precio</th>
-                    <th className="hidden px-4 py-3 text-right font-medium lg:table-cell">Dif. vs minimo</th>
+                    <th className="hidden px-4 py-3 text-right font-medium xl:table-cell">Dif. vs minimo</th>
                   </tr>
                 </thead>
                 <tbody>

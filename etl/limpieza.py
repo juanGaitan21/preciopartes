@@ -221,14 +221,20 @@ def construir_registro(
     vehiculo = limpiar_texto(vehiculo_raw)
     marca = limpiar_texto(marca_vehiculo_raw) or vehiculo
 
+    from display import normalizar_marca, extraer_vehiculo_display
+
+    desc_para_display = descripcion
+    marca_display = normalizar_marca(marca, desc_para_display)
+    vehiculo_display = extraer_vehiculo_display(vehiculo, desc_para_display, marca)
+
     return {
         "proveedor_nombre": proveedor_nombre,
         "referencia": referencia,
         "referencia_norm": referencia_norm,
         "equivalencia": equivalencia,
         "descripcion": descripcion,
-        "vehiculo": vehiculo,
-        "marca_vehiculo": marca,
+        "vehiculo": vehiculo_display or vehiculo,
+        "marca_vehiculo": marca_display or marca,
         "precio": precio,
         "precio_con_desc": precio_con_desc,
         "descuento_pct": desc_pct,

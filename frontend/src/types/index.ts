@@ -20,6 +20,9 @@ export interface ResultadoBusqueda {
   descripcion: string
   vehiculo: string
   marca_vehiculo: string
+  marca_display?: string
+  vehiculo_display?: string
+  equivalencia?: string
   precio: number
   precio_con_desc: number
   descuento_pct: number
