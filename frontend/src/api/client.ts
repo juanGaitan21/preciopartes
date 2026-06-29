@@ -86,11 +86,16 @@ async function request<T>(
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const detail = err.detail
-    const message = typeof detail === 'string'
-      ? detail
-      : Array.isArray(detail)
-        ? detail.map((d: { msg: string }) => d.msg).join(', ')
-        : 'Error en la solicitud'
+    let message: string
+    if (typeof detail === 'string') {
+      message = detail
+    } else if (detail && typeof detail === 'object' && 'mensaje' in detail) {
+      message = String((detail as { mensaje: string }).mensaje)
+    } else if (Array.isArray(detail)) {
+      message = detail.map((d: { msg: string }) => d.msg).join(', ')
+    } else {
+      message = 'Error en la solicitud'
+    }
     throw new Error(message)
   }
 

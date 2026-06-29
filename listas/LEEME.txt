@@ -1,0 +1,8 @@
+Carpeta para archivos Excel de prueba (ETL local).
+
+1. Copia aqui los .xls / .xlsx que te manden los proveedores
+2. Desde la raiz del proyecto ejecuta: python etl/test_etl.py
+3. Si fallan, hay que agregar reglas en etl/etl.py
+
+Para cargar a produccion NO uses esta carpeta: sube en la app
+Administracion -> Cargar listas (http://localhost:5173)

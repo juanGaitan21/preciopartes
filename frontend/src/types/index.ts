@@ -76,9 +76,18 @@ export interface UploadResponse {
   lista_id: number
   archivo: string
   proveedor?: string
+  tipo_detectado?: string
   registros_cargados: number
   fecha_lista: string | null
   mensaje: string
+}
+
+export interface UploadErrorItem {
+  archivo: string
+  mensaje: string
+  codigo?: string
+  tipo_detectado?: string | null
+  requiere_reglas_etl?: boolean
 }
 
 export interface BatchUploadResponse {
@@ -87,6 +96,6 @@ export interface BatchUploadResponse {
   archivos_error: number
   total_registros: number
   resultados: UploadResponse[]
-  errores: { archivo: string; error: string }[]
+  errores: UploadErrorItem[]
   mensaje: string
 }

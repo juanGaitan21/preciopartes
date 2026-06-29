@@ -476,6 +476,100 @@ def _parse_lista_e(path: Path, proveedor_nombre: str, fecha_lista: Optional[date
 # Entry point principal
 # ---------------------------------------------------------------------------
 
+def procesar_archivo_detallado(
+    path: Path,
+    proveedor_nombre: str = "",
+    tipo: Optional[str] = None,
+) -> dict:
+    """Procesa Excel y retorna registros + metadatos para mensajes al usuario."""
+    resultado = {
+        "registros": [],
+        "archivo": path.name,
+        "tipo_detectado": None,
+        "proveedor_detectado": None,
+        "formato_reconocido": False,
+        "codigo_error": None,
+        "mensaje": "",
+    }
+
+    if not path.exists():
+        resultado["codigo_error"] = "ARCHIVO_NO_ENCONTRADO"
+        resultado["mensaje"] = "No se pudo leer el archivo."
+        return resultado
+
+    fecha_lista = extraer_fecha_archivo(path.name)
+    tipo_explicito = tipo is not None
+
+    if tipo is None:
+        engine = "xlrd" if path.suffix.lower() == ".xls" else "openpyxl"
+        try:
+            df_preview = pd.read_excel(path, engine=engine, header=None, nrows=10)
+            tipo = detectar_tipo(path, df_preview)
+        except Exception as e:
+            logger.error(f"Error leyendo preview de {path.name}: {e}")
+            resultado["codigo_error"] = "ARCHIVO_ILEGIBLE"
+            resultado["mensaje"] = (
+                f"No se pudo abrir '{path.name}'. Verifica que sea un Excel valido (.xls / .xlsx)."
+            )
+            return resultado
+
+    resultado["tipo_detectado"] = tipo
+
+    if tipo == TIPO_DESCONOCIDO and not tipo_explicito:
+        resultado["codigo_error"] = "FORMATO_DESCONOCIDO"
+        resultado["mensaje"] = (
+            f"Formato no reconocido: '{path.name}'. "
+            "Copia este archivo a la carpeta listas/ y avisa al administrador para agregar reglas ETL."
+        )
+        return resultado
+
+    if not proveedor_nombre or proveedor_nombre.startswith("proveedor_"):
+        proveedor_nombre = detectar_proveedor_nombre(path, tipo)
+    resultado["proveedor_detectado"] = proveedor_nombre
+
+    parsers = {
+        TIPO_DH: _parse_dh,
+        TIPO_CAJAS: _parse_cajas,
+        TIPO_LISTA_E: _parse_lista_e,
+    }
+
+    parser = parsers.get(tipo)
+    if parser is None:
+        resultado["codigo_error"] = "FORMATO_DESCONOCIDO"
+        resultado["mensaje"] = (
+            f"Tipo '{tipo}' no soportado en '{path.name}'. "
+            "Copia el archivo a listas/ y solicita nuevas reglas ETL."
+        )
+        return resultado
+
+    resultado["formato_reconocido"] = True
+    logger.info(
+        f"Procesando {path.name} | tipo={tipo} | proveedor={proveedor_nombre} | fecha={fecha_lista}"
+    )
+
+    try:
+        registros = parser(path, proveedor_nombre, fecha_lista)
+    except Exception as e:
+        logger.exception(f"Error inesperado procesando {path.name}: {e}")
+        resultado["codigo_error"] = "ERROR_PROCESAMIENTO"
+        resultado["mensaje"] = f"Error procesando '{path.name}': {e}"
+        return resultado
+
+    if not registros:
+        resultado["codigo_error"] = "SIN_REGISTROS"
+        resultado["mensaje"] = (
+            f"Formato detectado '{tipo}' pero '{path.name}' no produjo registros validos. "
+            "Puede ser variante nueva: copia a listas/ y solicita ajuste de reglas."
+        )
+        return resultado
+
+    resultado["registros"] = registros
+    resultado["mensaje"] = (
+        f"{len(registros):,} repuestos ({proveedor_nombre}, formato {tipo})"
+    )
+    return resultado
+
+
 def procesar_archivo(
     path: Path,
     proveedor_nombre: str,
@@ -492,40 +586,4 @@ def procesar_archivo(
     Returns:
         Lista de registros normalizados. Nunca lanza excepción — errores van al log.
     """
-    if not path.exists():
-        logger.error(f"Archivo no encontrado: {path}")
-        return []
-
-    fecha_lista = extraer_fecha_archivo(path.name)
-
-    # Auto-detectar tipo si no viene explícito
-    if tipo is None:
-        engine = "xlrd" if path.suffix.lower() == ".xls" else "openpyxl"
-        try:
-            df_preview = pd.read_excel(path, engine=engine, header=None, nrows=10)
-            tipo = detectar_tipo(path, df_preview)
-        except Exception as e:
-            logger.error(f"Error leyendo preview de {path.name}: {e}")
-            return []
-
-    if not proveedor_nombre or proveedor_nombre.startswith("proveedor_"):
-        proveedor_nombre = detectar_proveedor_nombre(path, tipo)
-
-    logger.info(f"Procesando {path.name} | tipo={tipo} | proveedor={proveedor_nombre} | fecha={fecha_lista}")
-
-    parsers = {
-        TIPO_DH: _parse_dh,
-        TIPO_CAJAS: _parse_cajas,
-        TIPO_LISTA_E: _parse_lista_e,
-    }
-
-    parser = parsers.get(tipo)
-    if parser is None:
-        logger.error(f"Tipo de archivo no soportado: {tipo} ({path.name})")
-        return []
-
-    try:
-        return parser(path, proveedor_nombre, fecha_lista)
-    except Exception as e:
-        logger.exception(f"Error inesperado procesando {path.name}: {e}")
-        return []
+    return procesar_archivo_detallado(path, proveedor_nombre, tipo)["registros"]

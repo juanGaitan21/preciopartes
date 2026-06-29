@@ -28,7 +28,7 @@ from api.routes_auth import router as auth_router
 # ETL propio
 import sys
 sys.path.append(str(Path(__file__).parent.parent / "etl"))
-from etl import procesar_archivo, TIPO_DH, TIPO_CAJAS, TIPO_LISTA_E
+from etl import procesar_archivo_detallado, TIPO_DH, TIPO_CAJAS, TIPO_LISTA_E
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -260,19 +260,30 @@ async def _guardar_lista_desde_archivo(
     try:
         tmp_path.write_bytes(content)
 
-        registros = procesar_archivo(
+        etl = procesar_archivo_detallado(
             path=tmp_path,
             proveedor_nombre="",
             tipo=tipo,
         )
 
-        if not registros:
+        if etl["codigo_error"]:
             raise HTTPException(
                 status_code=422,
-                detail="El archivo no contiene registros validos. Verifica el formato.",
+                detail={
+                    "mensaje": etl["mensaje"],
+                    "codigo": etl["codigo_error"],
+                    "archivo": filename,
+                    "tipo_detectado": etl["tipo_detectado"],
+                    "requiere_reglas_etl": etl["codigo_error"] in (
+                        "FORMATO_DESCONOCIDO",
+                        "SIN_REGISTROS",
+                    ),
+                },
             )
 
-        proveedor_nombre = registros[0].get("proveedor_nombre") or "Proveedor desconocido"
+        registros = etl["registros"]
+        proveedor_nombre = etl["proveedor_detectado"] or "Proveedor desconocido"
+        tipo_detectado = etl["tipo_detectado"]
 
         async with pool.acquire() as conn:
             async with conn.transaction():
@@ -329,9 +340,10 @@ async def _guardar_lista_desde_archivo(
             "lista_id": lista_id,
             "archivo": filename,
             "proveedor": proveedor_nombre,
+            "tipo_detectado": tipo_detectado,
             "registros_cargados": len(registros),
             "fecha_lista": str(fecha_lista) if fecha_lista else None,
-            "mensaje": f"{len(registros):,} repuestos cargados ({proveedor_nombre})",
+            "mensaje": f"{len(registros):,} repuestos cargados ({proveedor_nombre}, formato {tipo_detectado})",
         }
 
     finally:
@@ -385,10 +397,23 @@ async def upload_listas_batch(
             )
             resultados.append(res)
         except HTTPException as e:
-            errores.append({"archivo": archivo.filename, "error": e.detail})
+            if isinstance(e.detail, dict):
+                errores.append({"archivo": archivo.filename, **e.detail})
+            else:
+                errores.append({
+                    "archivo": archivo.filename,
+                    "mensaje": str(e.detail),
+                    "codigo": "ERROR",
+                    "requiere_reglas_etl": False,
+                })
         except Exception as e:
             logger.exception(f"Error procesando {archivo.filename}: {e}")
-            errores.append({"archivo": archivo.filename, "error": str(e)})
+            errores.append({
+                "archivo": archivo.filename,
+                "mensaje": str(e),
+                "codigo": "ERROR",
+                "requiere_reglas_etl": False,
+            })
 
     total_registros = sum(r["registros_cargados"] for r in resultados)
 

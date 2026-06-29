@@ -318,12 +318,17 @@ function CargarListasSection() {
 
         {detalle && detalle.resultados.length > 0 && (
           <div className="rounded-lg border border-border bg-bg p-3">
-            <p className="mb-2 text-xs font-medium uppercase text-muted">Procesados</p>
+            <p className="mb-2 text-xs font-medium uppercase text-muted">Cargados correctamente</p>
             <ul className="space-y-1">
               {detalle.resultados.map((r) => (
                 <li key={r.lista_id} className="text-sm text-text">
-                  {r.archivo} — {r.registros_cargados.toLocaleString('es-CO')} repuestos
+                  <span className="font-medium">{r.archivo}</span>
+                  {' — '}
+                  {r.registros_cargados.toLocaleString('es-CO')} repuestos
                   {r.proveedor && <span className="text-muted"> ({r.proveedor})</span>}
+                  {r.tipo_detectado && (
+                    <span className="ml-1 text-xs text-accent">formato {r.tipo_detectado}</span>
+                  )}
                 </li>
               ))}
             </ul>
@@ -332,11 +337,25 @@ function CargarListasSection() {
 
         {detalle && detalle.errores.length > 0 && (
           <div className="rounded-lg border border-danger/30 bg-danger/10 p-3">
-            <p className="mb-2 text-xs font-medium uppercase text-danger">Errores</p>
-            <ul className="space-y-1">
+            <p className="mb-2 text-xs font-medium uppercase text-danger">
+              No se pudieron procesar ({detalle.errores.length})
+            </p>
+            <ul className="space-y-3">
               {detalle.errores.map((e) => (
-                <li key={e.archivo} className="text-sm text-danger">
-                  {e.archivo}: {e.error}
+                <li key={e.archivo} className="text-sm">
+                  <p className="font-medium text-danger">{e.archivo}</p>
+                  <p className="mt-0.5 text-muted">{e.mensaje}</p>
+                  {e.tipo_detectado && (
+                    <p className="mt-0.5 text-xs text-muted">
+                      Formato detectado: {e.tipo_detectado}
+                    </p>
+                  )}
+                  {e.requiere_reglas_etl && (
+                    <p className="mt-1 rounded bg-bg px-2 py-1 text-xs text-warning">
+                      Copia este archivo a la carpeta listas/ del proyecto y avisa al administrador
+                      para agregar reglas ETL.
+                    </p>
+                  )}
                 </li>
               ))}
             </ul>
