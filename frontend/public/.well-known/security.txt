@@ -1,0 +1,5 @@
+Contact: tel:+573045384661
+Contact: mailto:juangaitan21@gmail.com
+Preferred-Languages: es
+Canonical: https://preciopartes.versacode.com.co/.well-known/security.txt
+Policy: Aplicacion privada de Juan David Gaitan Reyes para gestion de repuestos automotrices. No es phishing ni imita WhatsApp, Meta u otras marcas.

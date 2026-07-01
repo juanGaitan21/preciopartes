@@ -8,11 +8,11 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'https://api.trasoftvps.xyz',
+        target: 'https://api.versacode.com.co',
         changeOrigin: true,
       },
       '/auth': {
-        target: 'https://api.trasoftvps.xyz',
+        target: 'https://api.versacode.com.co',
         changeOrigin: true,
       },
     },

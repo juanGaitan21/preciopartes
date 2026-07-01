@@ -2,6 +2,18 @@ import { useState, type FormEvent } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 
+const APP_OWNER = import.meta.env.VITE_APP_OWNER || 'Juan David Gaitan Reyes'
+const APP_CONTACT = import.meta.env.VITE_APP_CONTACT || ''
+const APP_PHONE = import.meta.env.VITE_APP_PHONE || '+573045384661'
+
+function formatPhoneDisplay(phone: string) {
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length === 12 && digits.startsWith('57')) {
+    return `${digits.slice(2, 5)} ${digits.slice(5, 8)} ${digits.slice(8)}`
+  }
+  return phone
+}
+
 export function LoginPage() {
   const { user, login, loading } = useAuth()
   const [email, setEmail] = useState('')
@@ -25,14 +37,17 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-bg px-4">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-bg px-4 py-8">
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-dim text-2xl font-bold text-white">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-2xl font-bold text-white">
             PP
           </div>
           <h1 className="text-2xl font-bold text-text">PrecioPartes</h1>
           <p className="mt-1 text-sm text-muted">Sistema de gestión de repuestos automotrices</p>
+          <p className="mt-2 text-xs text-muted">
+            Aplicación privada de {APP_OWNER}. Uso interno autorizado.
+          </p>
         </div>
 
         <form
@@ -84,11 +99,36 @@ export function LoginPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="mt-6 w-full rounded-lg bg-accent-dim py-2.5 text-sm font-semibold text-white transition-colors hover:bg-accent disabled:opacity-50"
+            className="mt-6 w-full rounded-lg bg-primary py-2.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
           >
             {submitting ? 'Ingresando...' : 'Ingresar'}
           </button>
         </form>
+
+        <footer className="mt-8 space-y-2 text-center text-xs leading-relaxed text-muted">
+          <p>
+            © {new Date().getFullYear()} {APP_OWNER}. PrecioPartes es software propio para
+            comparación de listas de repuestos automotrices.
+          </p>
+          <p>Responsable: {APP_OWNER}</p>
+          <p>
+            No está afiliado ni asociado con WhatsApp, Meta u otras marcas de terceros.
+          </p>
+          <p>
+            Contacto:{' '}
+            <a href={`tel:${APP_PHONE}`} className="text-primary hover:underline">
+              {formatPhoneDisplay(APP_PHONE)}
+            </a>
+            {APP_CONTACT && (
+              <>
+                {' · '}
+                <a href={`mailto:${APP_CONTACT}`} className="text-primary hover:underline">
+                  {APP_CONTACT}
+                </a>
+              </>
+            )}
+          </p>
+        </footer>
       </div>
     </div>
   )

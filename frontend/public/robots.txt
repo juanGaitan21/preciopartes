@@ -1,0 +1,3 @@
+# Aplicación interna — no indexar en buscadores
+User-agent: *
+Disallow: /

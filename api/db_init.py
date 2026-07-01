@@ -1,6 +1,7 @@
 """Inicializacion automatica de tablas al arrancar la API."""
 
 import logging
+import os
 
 from api.auth import hash_password
 
@@ -75,7 +76,7 @@ PROVEEDORES_INICIALES = (
 )
 
 ADMIN_EMAIL = "admin@preciopartes.com"
-ADMIN_PASSWORD = "admin123"
+ADMIN_PASSWORD = os.getenv("ADMIN_INITIAL_PASSWORD", "admin123")
 ADMIN_NOMBRE = "Administrador"
 
 

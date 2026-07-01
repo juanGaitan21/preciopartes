@@ -1,6 +1,9 @@
 [variables]
 NIXPACKS_NODE_VERSION = "22"
-VITE_API_URL = "https://api.trasoftvps.xyz"
+VITE_API_URL = "https://api.versacode.com.co"
+VITE_APP_OWNER = "Juan David Gaitan Reyes"
+VITE_APP_PHONE = "+573045384661"
+VITE_APP_CONTACT = "juangaitan21@gmail.com"
 
 [phases.install]
 cmds = ["npm ci"]

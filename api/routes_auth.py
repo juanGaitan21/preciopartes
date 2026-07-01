@@ -1,8 +1,9 @@
 """Rutas de autenticación y gestión de usuarios."""
 
+import os
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, EmailStr
 
 from .auth import (
@@ -58,11 +59,18 @@ class UserUpdate(BaseModel):
 
 
 @router.post("/recover-admin")
-async def recover_admin(request: Request):
+async def recover_admin(
+    request: Request,
+    x_recover_secret: Optional[str] = Header(None, alias="X-Recover-Secret"),
+):
     """
     Restaura el admin por defecto solo si no hay ningun administrador activo.
-    Uso de emergencia cuando se desactivo el unico admin por error.
+    Requiere RECOVER_ADMIN_SECRET en el servidor (deshabilitado si no esta configurado).
     """
+    expected = os.getenv("RECOVER_ADMIN_SECRET")
+    if not expected or x_recover_secret != expected:
+        raise HTTPException(status_code=404, detail="Not found")
+
     async with request.app.state.pool.acquire() as conn:
         activos = await conn.fetchval(
             "SELECT COUNT(*) FROM users WHERE rol = 'admin' AND activo = true"
@@ -77,7 +85,7 @@ async def recover_admin(request: Request):
     return {
         "ok": True,
         "email": ADMIN_EMAIL,
-        "mensaje": "Administrador restaurado. Usa la contraseña por defecto admin123.",
+        "mensaje": "Administrador restaurado. Usa la contraseña configurada en ADMIN_INITIAL_PASSWORD.",
     }
 
 
