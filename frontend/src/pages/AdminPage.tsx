@@ -319,7 +319,7 @@ function CargarListasSection() {
           <label className="mb-1 block text-sm font-medium text-text">Archivos Excel</label>
           <input
             type="file"
-            accept=".xls,.xlsx"
+            accept=".xls,.xlsx,.xlsm"
             multiple
             className="w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-accent-dim file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-accent"
             onChange={(e) => setArchivos(Array.from(e.target.files ?? []))}

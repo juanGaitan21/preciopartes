@@ -265,8 +265,8 @@ async def _guardar_lista_desde_archivo(
     tipo: Optional[str] = None,
 ) -> dict:
     ext = Path(filename).suffix.lower()
-    if ext not in (".xls", ".xlsx"):
-        raise HTTPException(status_code=400, detail="Solo se aceptan archivos .xls o .xlsx")
+    if ext not in EXTENSIONES_EXCEL:
+        raise HTTPException(status_code=400, detail="Solo se aceptan archivos .xls, .xlsx o .xlsm")
 
     tmp_path = Path(f"/tmp/{filename}")
     try:

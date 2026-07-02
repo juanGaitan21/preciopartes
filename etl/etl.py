@@ -14,6 +14,7 @@ from limpieza import (
     consolidar_registros,
     construir_registro,
     limpiar_precio,
+    limpiar_referencia,
     limpiar_texto,
     validar_lote,
 )
@@ -23,7 +24,11 @@ logger = logging.getLogger(__name__)
 TIPO_DH = "DH"
 TIPO_CAJAS = "CAJAS"
 TIPO_LISTA_E = "LISTA_E"
+TIPO_TABULAR = "TABULAR"
+TIPO_OBYCO = "OBYCO"
 TIPO_DESCONOCIDO = "DESCONOCIDO"
+
+EXTENSIONES_EXCEL = (".xls", ".xlsx", ".xlsm")
 
 
 def extraer_fecha_archivo(nombre: str) -> Optional[date]:
@@ -53,15 +58,57 @@ def extraer_fecha_archivo(nombre: str) -> Optional[date]:
 
 
 def _nombre_compacto(path: Path) -> str:
-    return re.sub(r"[\s_\-\+]+", "", path.name.upper())
+    return re.sub(r"[\s_\-\+#]+", "", path.name.upper())
+
+
+def _engine_excel(path: Path) -> str:
+    return "xlrd" if path.suffix.lower() == ".xls" else "openpyxl"
+
+
+def _texto_preview(df: pd.DataFrame, filas: int = 20) -> str:
+    partes = []
+    for v in df.iloc[:filas].values.flatten():
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            continue
+        s = str(v).strip()
+        if s and s.lower() not in ("nan", "none", "nat"):
+            partes.append(s)
+    return " ".join(partes).upper()
+
+
+def _hojas_ignorar(path: Path) -> frozenset[str]:
+    nombre = _nombre_compacto(path)
+    if "VENDEDORES" in nombre:
+        return frozenset({"HOJAS", "PEDIDO"})
+    return frozenset()
 
 
 def _buscar_fila_encabezado(df_raw: pd.DataFrame, marcadores: tuple = ("REFERENCIA", "PRECIO")) -> Optional[int]:
+    patrones = [
+        ("REFERENCIA", "PRECIO"),
+        ("REFERENCIA", "VENTA"),
+        ("REFERENCIA", "PRECIO VENTA"),
+        ("CODIGO", "PRECIO"),
+        ("CÓDIGO", "PRECIO"),
+        ("CODIGO", "REFERENCIA"),
+        ("VEHICULO", "REFERENCIA"),
+        ("COD.UR", "REFERENCIA"),
+        ("REFERENCIA", "NOMBRE"),
+    ]
     for i, row in df_raw.iterrows():
-        vals = " ".join(str(v).strip().upper() for v in row.values if str(v).strip().lower() != "nan")
-        if "REFERENCIA" in vals and "PRECIO" in vals:
+        vals = " ".join(
+            str(v).strip().upper()
+            for v in row.values
+            if v is not None and str(v).strip().lower() not in ("nan", "none", "")
+        )
+        if not vals:
+            continue
+        for a, b in patrones:
+            if a in vals and b in vals:
+                return int(i)
+        if "V.MAYOR" in vals and ("CODIGO" in vals or "CÓDIGO" in vals):
             return int(i)
-        if "CODIGO" in vals and "PRECIO" in vals:
+        if "ETIQUETAS DE FILA" in vals and "REFERENCIA" in vals:
             return int(i)
         if all(m in vals for m in marcadores):
             return int(i)
@@ -70,96 +117,170 @@ def _buscar_fila_encabezado(df_raw: pd.DataFrame, marcadores: tuple = ("REFERENC
 
 def _mapear_columnas(df: pd.DataFrame) -> dict:
     """Mapeo flexible de columnas Excel a campos internos."""
-    col_map = {}
+    col_map: dict = {}
     for col in df.columns:
         cu = str(col).strip().upper()
-        if cu in ("NAN", "NONE", "NAT"):
+        if cu in ("NAN", "NONE", "NAT", ""):
             continue
         if ("VEHICULO" in cu or "VEHÍCULO" in cu) and "vehiculo" not in col_map:
             col_map["vehiculo"] = col
         elif "REFERENCIA" in cu and "referencia" not in col_map:
             col_map["referencia"] = col
-        elif ("CODIGO" in cu or "CÓDIGO" in cu) and "referencia" not in col_map:
-            col_map["referencia"] = col
+        elif ("CODIGO" in cu or "CÓDIGO" in cu) and "codigo" not in col_map:
+            col_map["codigo"] = col
+        elif "COD.UR" in cu or cu == "COD UR":
+            col_map["cod_ur"] = col
         elif "EQUIVALENCIA" in cu or "EQUIV" in cu:
             col_map["equivalencia"] = col
         elif "DESCRIPCI" in cu and "descripcion" not in col_map:
             col_map["descripcion"] = col
+        elif "ETIQUETA" in cu and "FILA" in cu:
+            col_map["descripcion"] = col
+        elif "NOMBRE" in cu and "descripcion" not in col_map:
+            col_map["descripcion"] = col
+        elif cu == "MODELO" and "vehiculo" not in col_map:
+            col_map["vehiculo"] = col
         elif "MARCA" in cu and "marca" not in col_map:
             col_map["marca"] = col
+        elif "PRECIO VENTA" in cu:
+            col_map["precio"] = col
+        elif "V.MAYOR" in cu or "V MAYOR" in cu:
+            col_map["precio"] = col
+        elif "VENTA" in cu and "precio" not in col_map:
+            col_map["precio"] = col
         elif "PRECIO" in cu and "precio" not in col_map:
             col_map["precio"] = col
+        elif cu == "TOTAL":
+            col_map["precio_total"] = col
         elif "DESCUENTO" in cu:
             col_map["descuento"] = col
+
+    cols_upper = {str(c).strip().upper() for c in df.columns}
+    tiene_v_mayor = any("V.MAYOR" in c or "V MAYOR" in c for c in cols_upper)
+
+    if tiene_v_mayor and col_map.get("codigo"):
+        col_map["equivalencia"] = col_map.get("referencia") or col_map.get("equivalencia")
+        col_map["referencia"] = col_map["codigo"]
+
+    if col_map.get("cod_ur") and not col_map.get("referencia"):
+        col_map["referencia"] = col_map["cod_ur"]
+    elif col_map.get("cod_ur") and col_map.get("referencia") and col_map["cod_ur"] != col_map["referencia"]:
+        col_map.setdefault("equivalencia", col_map["cod_ur"])
+
+    if not col_map.get("referencia") and col_map.get("codigo"):
+        col_map["referencia"] = col_map["codigo"]
+
     return col_map
+
+
+def _fila_es_categoria(row, col_map: dict) -> bool:
+    ref_raw = row.get(col_map.get("referencia", ""), "")
+    cod_raw = row.get(col_map.get("codigo", ""), "")
+    ref = limpiar_referencia(ref_raw)
+    cod = limpiar_texto(cod_raw)
+    if str(ref_raw).strip() in ("=", "_") or str(cod_raw).strip() in ("=", "_"):
+        return True
+    if cod.startswith("01-") or cod.startswith("01 "):
+        return True
+    desc = limpiar_texto(row.get(col_map.get("descripcion", ""), ""))
+    if desc and re.match(r"^\d{2}\s", desc) and limpiar_precio(row.get(col_map.get("precio"), None)) is None:
+        return True
+    precio_col = col_map.get("precio") or col_map.get("precio_total")
+    if precio_col is None:
+        return True
+    if limpiar_precio(row.get(precio_col, None)) is None:
+        return True
+    return False
 
 
 def detectar_tipo(path: Path, df_primera_hoja: pd.DataFrame) -> str:
     """Detecta formato: primero por nombre de archivo, luego por contenido."""
     compacto = _nombre_compacto(path)
+    primeras_filas = _texto_preview(df_primera_hoja)
 
-    # Nombre del archivo (mas confiable para las 4 listas conocidas)
-    if "LISTAPRECIO" in compacto:
-        return TIPO_LISTA_E
+    if "OBYCO" in compacto or "ETIQUETAS DE FILA" in primeras_filas:
+        return TIPO_OBYCO
     if any(k in compacto for k in ("CAJAS", "DIRECCION", "DRIECCION")):
         return TIPO_CAJAS
     if "DH4350" in compacto or (
         compacto.startswith("DH") and ("COREA" in compacto or "SOPORTES" in compacto)
     ):
         return TIPO_DH
+    if "LISTAPORVEHICULO" in compacto:
+        return TIPO_DH
 
-    cols = [str(c).strip().upper() for c in df_primera_hoja.columns]
-    cols_str = " ".join(cols)
-    primeras_filas = " ".join(
-        df_primera_hoja.iloc[:12].astype(str).values.flatten().tolist()
-    ).upper()
-
-    # Lista E: CODIGO + (MARCA o GRUPO)
+    if "V.MAYOR" in primeras_filas or "V MAYOR" in primeras_filas:
+        return TIPO_TABULAR
+    if "TAIHO" in compacto or "VENTANAS" in compacto:
+        return TIPO_TABULAR
+    if "CODIGO" in primeras_filas and "REFERENCIA" in primeras_filas and "VENTA" in primeras_filas:
+        return TIPO_TABULAR
+    if "PRECIO VENTA" in primeras_filas:
+        return TIPO_TABULAR
+    if "COD.UR" in primeras_filas or "CODUR" in primeras_filas.replace(".", ""):
+        return TIPO_CAJAS
+    if "LISTAPRECIO" in compacto or "INDUFAROS" in compacto:
+        return TIPO_LISTA_E
     if ("CODIGO" in primeras_filas or "CÓDIGO" in primeras_filas) and (
         "GRUPO" in primeras_filas or "MARCA" in primeras_filas
     ):
         return TIPO_LISTA_E
-    if "CODIGO" in cols_str or "CÓDIGO" in cols_str:
-        return TIPO_LISTA_E
 
-    # Cajas: COD.UR o columna descuento
-    if "COD.UR" in primeras_filas or "CODUR" in primeras_filas.replace(".", ""):
-        return TIPO_CAJAS
-    if "REFERENCIA" in primeras_filas and "PRECIO" in primeras_filas and "DESCUENTO" in primeras_filas:
-        return TIPO_CAJAS
-
-    # DH: VEHICULO + REFERENCIA (+ EQUIVALENCIA)
-    if "VEHICULO" in cols_str and "REFERENCIA" in cols_str:
-        return TIPO_DH
-    if "REFERENCIA" in primeras_filas and "PRECIO" in primeras_filas and (
-        "VEHICULO" in primeras_filas or "EQUIVALENCIA" in primeras_filas
+    if "REFERENCIA" in primeras_filas and (
+        "PRECIO" in primeras_filas or "VENTA" in primeras_filas or "NOMBRE" in primeras_filas
     ):
-        return TIPO_DH
+        if "VEHICULO" in primeras_filas or "EQUIVALENCIA" in primeras_filas:
+            return TIPO_DH
+        return TIPO_TABULAR
 
-    # CAJAS generico: descripcion + precio sin equivalencia
-    if ("DESCRIPCION" in primeras_filas or "DESCRIPCIÓN" in primeras_filas) and "PRECIO" in primeras_filas:
-        return TIPO_CAJAS
+    if ("DESCRIPCION" in primeras_filas or "DESCRIPCIÓN" in primeras_filas) and (
+        "PRECIO" in primeras_filas or "VENTA" in primeras_filas
+    ):
+        return TIPO_TABULAR
 
     return TIPO_DESCONOCIDO
 
 
 def detectar_proveedor_nombre(path: Path, tipo: Optional[str] = None) -> str:
     nombre = _nombre_compacto(path)
-    if "SOPORTES" in nombre:
-        return "DH Soportes"
-    if any(k in nombre for k in ("CAJAS", "DIRECCION", "DRIECCION")):
-        return "Cajas de Dirección"
-    if "LISTAPRECIO" in nombre or tipo == TIPO_LISTA_E:
-        return "Lista Precio E"
-    if "COREA" in nombre or ("DH4350" in nombre and "SOPORTES" not in nombre):
+
+    reglas = [
+        ("SOPORTES", "DH Soportes"),
+        ("CAJAS", "Cajas de Dirección"),
+        ("DIRECCION", "Cajas de Dirección"),
+        ("DRIECCION", "Cajas de Dirección"),
+        ("FLORIDA", "Florida Importaciones"),
+        ("PUNTOCOREA", "Punto Corea"),
+        ("OBYCO", "OBYCO"),
+        ("INDUFAROS", "Indufaros"),
+        ("TAIHO", "Taiho"),
+        ("OCCIDENTE", "Autopartes de Occidente"),
+        ("CONSOLIDADO", "Consolidado Mayor"),
+        ("REDPARTES", "Redpartes OSRAM"),
+        ("VENTANAS", "Redpartes OSRAM"),
+        ("OSRAM", "Redpartes OSRAM"),
+        ("LISTAPORVEHICULOJAPON", "Lista por Vehículo Japón"),
+        ("LISTAPORVEHICULOKOREA", "Lista por Vehículo Korea"),
+        ("DH4350COREA", "DH Repuestos Corea"),
+        ("LISTAGENERAL", "Lista General UR"),
+        ("VENDEDORES", "Lista Vendedores"),
+    ]
+    for clave, proveedor in reglas:
+        if clave in nombre:
+            return proveedor
+
+    if "COREA" in nombre and "PUNTO" not in nombre:
         return "DH Repuestos Corea"
+    if "LISTAPRECIO" in nombre:
+        return "Lista Precio E"
     if tipo == TIPO_DH:
         return "DH Repuestos Corea"
     if tipo == TIPO_CAJAS:
         return "Cajas de Dirección"
     if tipo == TIPO_LISTA_E:
         return "Lista Precio E"
-    stem = re.sub(r"[_\-]+", " ", path.stem).strip()
+
+    stem = re.sub(r"[_\-#]+", " ", path.stem).strip()
     return stem[:80] if stem else "Proveedor desconocido"
 
 
@@ -170,11 +291,7 @@ def _leer_hoja_con_encabezado(path: Path, sheet: str, engine: str) -> Optional[p
         logger.error("Error leyendo hoja '%s' de %s: %s", sheet, path.name, e)
         return None
 
-    header_row = _buscar_fila_encabezado(df_raw, ("REFERENCIA", "PRECIO"))
-    if header_row is None:
-        header_row = _buscar_fila_encabezado(df_raw, ("CODIGO", "PRECIO"))
-    if header_row is None:
-        header_row = _buscar_fila_encabezado(df_raw, ("VEHICULO", "REFERENCIA"))
+    header_row = _buscar_fila_encabezado(df_raw)
     if header_row is None:
         header_row = 0
 
@@ -186,7 +303,7 @@ def _leer_hoja_con_encabezado(path: Path, sheet: str, engine: str) -> Optional[p
 
 
 def _parse_dh(path: Path, proveedor_nombre: str, fecha_lista: Optional[date]) -> list[dict]:
-    engine = "xlrd" if path.suffix.lower() == ".xls" else "openpyxl"
+    engine = _engine_excel(path)
     xl = pd.ExcelFile(path, engine=engine)
     registros = []
 
@@ -221,7 +338,7 @@ def _parse_dh(path: Path, proveedor_nombre: str, fecha_lista: Optional[date]) ->
 
 
 def _parse_cajas(path: Path, proveedor_nombre: str, fecha_lista: Optional[date]) -> list[dict]:
-    engine = "xlrd" if path.suffix.lower() == ".xls" else "openpyxl"
+    engine = _engine_excel(path)
     xl = pd.ExcelFile(path, engine=engine)
     registros = []
 
@@ -257,7 +374,7 @@ def _parse_cajas(path: Path, proveedor_nombre: str, fecha_lista: Optional[date])
 
 
 def _parse_lista_e(path: Path, proveedor_nombre: str, fecha_lista: Optional[date]) -> list[dict]:
-    engine = "openpyxl" if path.suffix.lower() == ".xlsx" else "xlrd"
+    engine = _engine_excel(path)
     xl = pd.ExcelFile(path, engine=engine)
     registros = []
 
@@ -295,6 +412,146 @@ def _parse_lista_e(path: Path, proveedor_nombre: str, fecha_lista: Optional[date
                 registros.append(reg)
 
     logger.info("[LISTA_E] %s: %d registros validos", path.name, len(registros))
+    return registros
+
+
+def _parse_tabular(path: Path, proveedor_nombre: str, fecha_lista: Optional[date]) -> list[dict]:
+    """Formato tabular generico: consolidado, occidente, taiho, punto corea, vendedores, ventanas."""
+    engine = _engine_excel(path)
+    xl = pd.ExcelFile(path, engine=engine)
+    ignorar = _hojas_ignorar(path)
+    registros = []
+
+    for sheet in xl.sheet_names:
+        if sheet.strip().upper() in ignorar:
+            continue
+
+        df = _leer_hoja_con_encabezado(path, sheet, engine)
+        if df is None or df.empty:
+            continue
+
+        col_map = _mapear_columnas(df)
+        if "referencia" not in col_map or ("precio" not in col_map and "precio_total" not in col_map):
+            logger.warning("[TABULAR] Hoja '%s' sin columnas clave: %s", sheet, col_map)
+            continue
+
+        precio_col = col_map.get("precio") or col_map.get("precio_total")
+
+        for _, row in df.iterrows():
+            if _fila_es_categoria(row, col_map):
+                continue
+
+            reg = construir_registro(
+                proveedor_nombre=proveedor_nombre,
+                referencia_raw=row.get(col_map["referencia"], ""),
+                descripcion_raw=row.get(col_map.get("descripcion", ""), ""),
+                precio_raw=row.get(precio_col, None),
+                equivalencia_raw=row.get(col_map.get("equivalencia", ""), ""),
+                vehiculo_raw=row.get(col_map.get("vehiculo", ""), "") or sheet,
+                marca_vehiculo_raw=row.get(col_map.get("marca", ""), ""),
+                descuento_raw=row.get(col_map.get("descuento"), None),
+                fecha_lista=fecha_lista,
+                archivo_origen=path.name,
+                sheet_origen=sheet,
+            )
+            if reg:
+                registros.append(reg)
+
+    logger.info("[TABULAR] %s: %d registros validos", path.name, len(registros))
+
+    if "TAIHO" in _nombre_compacto(path):
+        registros.extend(_parse_taiho_sin_encabezado(path, engine, proveedor_nombre, fecha_lista))
+
+    return registros
+
+
+def _parse_taiho_sin_encabezado(
+    path: Path, engine: str, proveedor_nombre: str, fecha_lista: Optional[date]
+) -> list[dict]:
+    """Hoja1 de Taiho viene sin fila de encabezado; reutiliza columnas de Sheet1."""
+    extra: list[dict] = []
+    try:
+        df_header = pd.read_excel(path, sheet_name="Sheet1", engine=engine, header=None)
+        header_row = _buscar_fila_encabezado(df_header)
+        if header_row is None:
+            return extra
+        headers = [str(h).strip() for h in df_header.iloc[header_row].tolist()]
+        df = pd.read_excel(path, sheet_name="Hoja1", engine=engine, header=None, names=headers)
+    except Exception as e:
+        logger.warning("[TAIHO] No se pudo leer Hoja1 de %s: %s", path.name, e)
+        return extra
+
+    col_map = _mapear_columnas(df)
+    if "referencia" not in col_map or "precio" not in col_map:
+        return extra
+
+    for _, row in df.iterrows():
+        if _fila_es_categoria(row, col_map):
+            continue
+        reg = construir_registro(
+            proveedor_nombre=proveedor_nombre,
+            referencia_raw=row.get(col_map["referencia"], ""),
+            descripcion_raw=row.get(col_map.get("descripcion", ""), ""),
+            precio_raw=row.get(col_map["precio"], None),
+            equivalencia_raw=row.get(col_map.get("equivalencia", ""), ""),
+            vehiculo_raw="",
+            marca_vehiculo_raw=row.get(col_map.get("marca", ""), ""),
+            fecha_lista=fecha_lista,
+            archivo_origen=path.name,
+            sheet_origen="Hoja1",
+        )
+        if reg:
+            extra.append(reg)
+
+    if extra:
+        logger.info("[TAIHO] %s Hoja1: %d registros extra", path.name, len(extra))
+    return extra
+
+
+def _parse_obyco(path: Path, proveedor_nombre: str, fecha_lista: Optional[date]) -> list[dict]:
+    """Lista pivot OBYCO: descripcion en etiqueta de fila, precio en Total."""
+    engine = _engine_excel(path)
+    xl = pd.ExcelFile(path, engine=engine)
+    registros = []
+
+    for sheet in xl.sheet_names:
+        df_raw = pd.read_excel(path, sheet_name=sheet, engine=engine, header=None)
+        header_row = _buscar_fila_encabezado(df_raw)
+        if header_row is None:
+            continue
+
+        df = pd.read_excel(path, sheet_name=sheet, engine=engine, header=header_row)
+        col_map = _mapear_columnas(df)
+        if "referencia" not in col_map:
+            continue
+
+        precio_col = col_map.get("precio_total") or col_map.get("precio")
+        if not precio_col:
+            continue
+
+        for _, row in df.iterrows():
+            desc = limpiar_texto(row.get(col_map.get("descripcion", ""), ""))
+            if not desc or desc.startswith("01-"):
+                continue
+            if limpiar_precio(row.get(precio_col, None)) is None:
+                continue
+
+            reg = construir_registro(
+                proveedor_nombre=proveedor_nombre,
+                referencia_raw=row.get(col_map["referencia"], ""),
+                descripcion_raw=desc,
+                precio_raw=row.get(precio_col, None),
+                equivalencia_raw=row.get(col_map.get("codigo", ""), ""),
+                vehiculo_raw=limpiar_texto(row.get(col_map.get("vehiculo", ""), "")),
+                marca_vehiculo_raw=row.get(col_map.get("marca", ""), ""),
+                fecha_lista=fecha_lista,
+                archivo_origen=path.name,
+                sheet_origen=sheet,
+            )
+            if reg:
+                registros.append(reg)
+
+    logger.info("[OBYCO] %s: %d registros validos", path.name, len(registros))
     return registros
 
 
@@ -343,9 +600,15 @@ def procesar_archivo_detallado(
     tipo_explicito = tipo is not None
 
     if tipo is None:
-        engine = "xlrd" if path.suffix.lower() == ".xls" else "openpyxl"
+        engine = _engine_excel(path)
         try:
-            df_preview = pd.read_excel(path, engine=engine, header=None, nrows=12)
+            xl = pd.ExcelFile(path, engine=engine)
+            sheet = xl.sheet_names[0]
+            for candidata in xl.sheet_names:
+                if candidata.strip().upper() not in _hojas_ignorar(path):
+                    sheet = candidata
+                    break
+            df_preview = pd.read_excel(path, sheet_name=sheet, engine=engine, header=None, nrows=25)
             tipo = detectar_tipo(path, df_preview)
         except Exception as e:
             logger.error("Error leyendo preview de %s: %s", path.name, e)
@@ -373,6 +636,8 @@ def procesar_archivo_detallado(
         TIPO_DH: _parse_dh,
         TIPO_CAJAS: _parse_cajas,
         TIPO_LISTA_E: _parse_lista_e,
+        TIPO_TABULAR: _parse_tabular,
+        TIPO_OBYCO: _parse_obyco,
     }
     parser = parsers.get(tipo)
     if parser is None:

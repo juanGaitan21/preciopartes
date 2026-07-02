@@ -20,7 +20,7 @@ BASE = Path(__file__).parent.parent / "listas"
 
 def main():
     archivos = sorted(
-        list(BASE.glob("*.xls")) + list(BASE.glob("*.xlsx"))
+        list(BASE.glob("*.xls")) + list(BASE.glob("*.xlsx")) + list(BASE.glob("*.xlsm"))
     )
 
     print("\n" + "=" * 60)

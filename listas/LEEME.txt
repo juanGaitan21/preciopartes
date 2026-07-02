@@ -1,8 +1,14 @@
-Carpeta para archivos Excel de prueba (ETL local).
+Carpeta de prueba para el ETL local.
 
-1. Copia aqui los .xls / .xlsx que te manden los proveedores
-2. Desde la raiz del proyecto ejecuta: python etl/test_etl.py
-3. Si fallan, hay que agregar reglas en etl/etl.py
+1. Copia aqui los .xls / .xlsx / .xlsm de proveedores
+2. Desde la raiz: .venv/bin/python etl/test_etl.py
+3. El sistema autodetecta proveedor y formato — no hace falta configurar nada
 
-Para cargar a produccion NO uses esta carpeta: sube en la app
-Administracion -> Cargar listas (http://localhost:5173)
+Formatos reconocidos (ejemplos en esta carpeta):
+  DH          — VEHICULO + REFERENCIA + PRECIO (DH Corea, Lista por Vehiculo)
+  CAJAS       — Cod.UR o multi-hoja (Cajas Direccion, Lista GENERAL)
+  LISTA_E     — CODIGO + DESCRIPCION + GRUPO + PRECIO (Florida, Indufaros)
+  TABULAR     — Consolidado, Occidente, Punto Corea, Vendedores, Ventanas, Taiho
+  OBYCO       — Lista pivot con columna Total
+
+Produccion: Administracion -> Cargar listas (sube todos los archivos a la vez)
