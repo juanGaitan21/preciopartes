@@ -2,8 +2,8 @@ import { useState, type FormEvent } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 
-const APP_OWNER = import.meta.env.VITE_APP_OWNER || 'Juan David Gaitan Reyes'
-const APP_CONTACT = import.meta.env.VITE_APP_CONTACT || ''
+const APP_OWNER = import.meta.env.VITE_APP_OWNER || 'Juan David Gaitan'
+const APP_CONTACT = import.meta.env.VITE_APP_CONTACT || 'juandavid092415@hotmail.com'
 const APP_PHONE = import.meta.env.VITE_APP_PHONE || '+573045384661'
 
 function formatPhoneDisplay(phone: string) {
@@ -111,9 +111,6 @@ export function LoginPage() {
             comparación de listas de repuestos automotrices.
           </p>
           <p>Responsable: {APP_OWNER}</p>
-          <p>
-            No está afiliado ni asociado con WhatsApp, Meta u otras marcas de terceros.
-          </p>
           <p>
             Contacto:{' '}
             <a href={`tel:${APP_PHONE}`} className="text-primary hover:underline">
