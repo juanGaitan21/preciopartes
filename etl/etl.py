@@ -378,7 +378,20 @@ def _parse_lista_e(path: Path, proveedor_nombre: str, fecha_lista: Optional[date
     xl = pd.ExcelFile(path, engine=engine)
     registros = []
 
-    for sheet in xl.sheet_names:
+    # Algunos archivos traen la misma lista en 2 hojas (ej. Lista Completa + HYUNDAI-KIA KO).
+    hojas = list(xl.sheet_names)
+    if len(hojas) >= 2:
+        tiene_completa = any(
+            "COMPLETA" in s.upper() and "MARCA" in s.upper() for s in hojas
+        )
+        if tiene_completa:
+            hojas = [
+                s for s in hojas
+                if not ("HYUNDAI" in s.upper() and "KIA" in s.upper())
+            ]
+            logger.info("[LISTA_E] %s: omitiendo hoja duplicada HYUNDAI-KIA KO", path.name)
+
+    for sheet in hojas:
         df = _leer_hoja_con_encabezado(path, sheet, engine)
         if df is None:
             continue

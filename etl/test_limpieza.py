@@ -28,7 +28,7 @@ def test_precios():
     assert limpiar_precio("precio") is None
     assert limpiar_precio("15%") is None
     assert limpiar_precio(0) is None
-    assert limpiar_precio(50) is None  # bajo minimo 100
+    assert limpiar_precio(50) == 50.0
     print("  precios OK")
 
 

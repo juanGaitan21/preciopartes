@@ -21,7 +21,7 @@ _DESC_BASURA = frozenset({
     "REFERENCIA", "PRECIO", "VEHICULO", "VEHÍCULO", "TOTAL",
 })
 
-PRECIO_MINIMO = 100          # COP — repuesto real minimo razonable
+PRECIO_MINIMO = 1            # COP — no descartar piezas baratas (tornillos, retenes, etc.)
 PRECIO_MAXIMO = 500_000_000  # COP — tope de sanidad
 
 

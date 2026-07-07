@@ -43,8 +43,17 @@ def main():
             continue
         n = len(det["registros"])
         total += n
-        desc = det.get("filas_descartadas", 0)
-        print(f"     Registros : {n:,}  (descartados en limpieza: {desc})")
+        st = det.get("estadisticas") or {}
+        if st:
+            print(
+                f"     Registros : {n:,}  "
+                f"(leidas: {st.get('filas_validas_parseadas', n):,}, "
+                f"dup exactos: {st.get('duplicados_exactos', 0):,}, "
+                f"rechazados: {st.get('rechazados_validacion', 0):,})"
+            )
+        else:
+            desc = det.get("filas_descartadas", 0)
+            print(f"     Registros : {n:,}  (descartados: {desc})")
         if n:
             r = det["registros"][0]
             print(f"     Muestra   : {r['referencia']} | {r['descripcion'][:40]}")
