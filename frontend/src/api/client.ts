@@ -4,6 +4,8 @@ import type {
   Lista,
   Proveedor,
   TokenResponse,
+  UploadJobResponse,
+  UploadJobStatus,
   UploadResponse,
   User,
   UserCreate,
@@ -148,6 +150,15 @@ export const api = {
     archivos.forEach((a) => form.append('archivos', a))
     return request<BatchUploadResponse>('/api/listas/upload-batch', { method: 'POST', body: form })
   },
+
+  uploadListasBatchAsync: (archivos: File[]) => {
+    const form = new FormData()
+    archivos.forEach((a) => form.append('archivos', a))
+    return request<UploadJobResponse>('/api/listas/upload-batch-async', { method: 'POST', body: form })
+  },
+
+  getUploadJobStatus: (jobId: string) =>
+    request<UploadJobStatus>(`/api/listas/jobs/${jobId}`),
 
   desactivarLista: (listaId: number) =>
     request<{ ok: boolean; mensaje: string }>(`/api/listas/${listaId}`, { method: 'DELETE' }),

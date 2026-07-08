@@ -113,3 +113,43 @@ export interface BatchUploadResponse {
   errores: UploadErrorItem[]
   mensaje: string
 }
+
+export type JobFileEstado = 'pending' | 'processing' | 'completed' | 'failed'
+export type JobEstado = 'queued' | 'processing' | 'completed' | 'failed'
+
+export interface JobArchivoStatus {
+  archivo: string
+  orden: number
+  estado: JobFileEstado
+  lista_id: number | null
+  registros_cargados: number
+  resultado?: UploadResponse
+  error?: UploadErrorItem
+}
+
+export interface UploadJobResponse {
+  job_id: string
+  total_archivos: number
+  estado: JobEstado
+  mensaje: string
+}
+
+export interface UploadJobStatus {
+  job_id: string
+  estado: JobEstado
+  ok: boolean
+  total_archivos: number
+  archivos_completados: number
+  archivos_error: number
+  archivos_procesando: number
+  archivos_pendientes: number
+  progreso_pct: number
+  total_registros: number
+  archivos: JobArchivoStatus[]
+  resultados: UploadResponse[]
+  errores: UploadErrorItem[]
+  mensaje: string
+  creado_en: string | null
+  iniciado_en: string | null
+  finalizado_en: string | null
+}

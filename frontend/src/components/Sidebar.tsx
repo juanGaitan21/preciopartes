@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { useAuth, type ModuleKey } from '../auth/AuthContext'
+import { useOnboarding } from '../onboarding/OnboardingContext'
 
 const NAV_ITEMS: { to: string; label: string; icon: string; module: ModuleKey }[] = [
   { to: '/comparador', label: 'Comparador', icon: '🔍', module: 'comparador' },
@@ -14,6 +15,7 @@ interface Props {
 
 export function Sidebar({ open, onClose }: Props) {
   const { user, logout, canAccess } = useAuth()
+  const { openGuide } = useOnboarding()
 
   const visibleItems = NAV_ITEMS.filter((item) => canAccess(item.module))
 
@@ -62,6 +64,20 @@ export function Sidebar({ open, onClose }: Props) {
             </NavLink>
           ))}
         </nav>
+
+        <div className="px-3 pb-2">
+          <button
+            type="button"
+            onClick={() => {
+              openGuide()
+              onClose()
+            }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted transition-colors hover:bg-surface-hover hover:text-text"
+          >
+            <span>💡</span>
+            Guia de inicio
+          </button>
+        </div>
 
         <div className="border-t border-border p-4">
           <div className="mb-3 rounded-lg bg-surface-hover px-3 py-2">

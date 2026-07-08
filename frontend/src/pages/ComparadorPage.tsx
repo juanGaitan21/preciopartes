@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
+import { useOnboarding } from '../onboarding/OnboardingContext'
 import type { ResultadoBusqueda } from '../types'
 import { marcaLabel, pctMasCaro, vehiculoLabel } from '../utils/repuestoDisplay'
 
@@ -63,6 +64,7 @@ function ResultRow({ item }: { item: ResultadoBusqueda }) {
 }
 
 export function ComparadorPage() {
+  const { markStepDone } = useOnboarding()
   const [query, setQuery] = useState('')
   const [soloMasBaratos, setSoloMasBaratos] = useState(false)
   const [resultados, setResultados] = useState<ResultadoBusqueda[]>([])
@@ -96,6 +98,7 @@ export function ComparadorPage() {
         if (id !== requestId.current) return
         setResultados(data.resultados)
         setSearched(true)
+        if (data.total > 0) markStepDone('comparador')
       } catch (err) {
         if (id !== requestId.current) return
         setError(err instanceof Error ? err.message : 'Error en la busqueda')
@@ -107,7 +110,7 @@ export function ComparadorPage() {
     }, DEBOUNCE_MS)
 
     return () => clearTimeout(timer)
-  }, [query, soloMasBaratos])
+  }, [query, soloMasBaratos, markStepDone])
 
   const trimmedQuery = query.trim()
   const showHint = trimmedQuery.length > 0 && trimmedQuery.length < MIN_CHARS

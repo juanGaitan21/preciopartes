@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   api:
     build: .
@@ -8,12 +6,14 @@ services:
     environment:
       DATABASE_URL: postgresql://preciopartes:preciopartes@db:5432/preciopartes
       SECRET_KEY: ${SECRET_KEY:-preciopartes-dev-secret-change-in-production}
+      UPLOAD_JOB_DIR: /app/data/jobs
     depends_on:
       db:
         condition: service_healthy
     volumes:
-      - ./etl:/app/etl      # Hot reload en dev
+      - ./etl:/app/etl
       - ./api:/app/api
+      - upload_jobs_data:/app/data
 
   db:
     image: postgres:16-alpine
@@ -34,3 +34,4 @@ services:
 
 volumes:
   pg_data:
+  upload_jobs_data:
