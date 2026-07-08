@@ -7,7 +7,8 @@ RUN npm ci
 
 COPY . .
 
-ARG VITE_API_URL=https://api.versacode.com.co
+# Dejar vacio en produccion: nginx del frontend hace proxy a /api y /auth
+ARG VITE_API_URL=
 ARG VITE_APP_OWNER=Juan David Gaitan
 ARG VITE_APP_PHONE=+573045384661
 ARG VITE_APP_CONTACT=juandavid092415@hotmail.com
