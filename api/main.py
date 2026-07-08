@@ -11,8 +11,10 @@ Endpoints:
 """
 
 import asyncio
+import json
 import logging
 import os
+import time
 from datetime import date
 from pathlib import Path
 from typing import List, Optional
@@ -24,6 +26,7 @@ from pydantic import BaseModel
 
 from api.deps import get_current_user, require_permission, require_roles
 from api.db_init import init_database
+from api.partes_bulk import insert_partes_bulk
 from api.routes_auth import router as auth_router
 from api.upload_jobs import (
     ListaUploadError,
@@ -71,7 +74,7 @@ async def startup():
     app.state.pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
     await init_database(app.state.pool)
     await ensure_upload_job_tables(app.state.pool)
-    await resume_pending_jobs(app.state.pool, _guardar_lista_en_conn)
+    await resume_pending_jobs(app.state.pool, _guardar_lista_desde_path)
     logger.info("DB pool creado")
 
 @app.on_event("shutdown")
@@ -269,13 +272,25 @@ async def get_or_create_proveedor(conn, nombre: str) -> int:
     )
 
 
-async def _guardar_lista_en_conn(
-    conn,
+async def _set_job_file_fase(pool, file_id: Optional[int], fase: str, detalle: str = "") -> None:
+    if file_id is None:
+        return
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE upload_job_archivos SET resultado = $2::jsonb WHERE id = $1",
+            file_id,
+            json.dumps({"fase": fase, "detalle": detalle}),
+        )
+
+
+async def _guardar_lista_desde_path(
+    pool,
     file_path: Path,
     filename: str,
     subido_por: str,
     proveedor_id: Optional[int] = None,
     tipo: Optional[str] = None,
+    file_id: Optional[int] = None,
 ) -> dict:
     ext = Path(filename).suffix.lower()
     if ext not in EXTENSIONES_EXCEL:
@@ -284,12 +299,17 @@ async def _guardar_lista_en_conn(
             codigo="EXTENSION_INVALIDA",
         )
 
+    t0 = time.monotonic()
+    await _set_job_file_fase(pool, file_id, "leyendo_excel", "Leyendo y normalizando el Excel...")
+
     etl = await asyncio.to_thread(
         procesar_archivo_detallado,
         path=file_path,
         proveedor_nombre="",
         tipo=tipo,
     )
+    t_etl = time.monotonic()
+    logger.info("ETL %s: %.1fs", filename, t_etl - t0)
 
     if etl["codigo_error"]:
         raise ListaUploadError(
@@ -303,54 +323,41 @@ async def _guardar_lista_en_conn(
     registros = etl["registros"]
     proveedor_nombre = etl["proveedor_detectado"] or "Proveedor desconocido"
     tipo_detectado = etl["tipo_detectado"]
+    n = len(registros)
 
-    if proveedor_id is None:
-        proveedor_id = await get_or_create_proveedor(conn, proveedor_nombre)
-
-    await conn.execute(
-        "UPDATE listas SET activa = false WHERE proveedor_id = $1",
-        proveedor_id,
+    await _set_job_file_fase(
+        pool,
+        file_id,
+        "guardando_bd",
+        f"Guardando {n:,} repuestos en la base de datos...",
     )
 
-    fecha_lista = registros[0].get("fecha_lista")
-    lista_id = await conn.fetchval(
-        """INSERT INTO listas (proveedor_id, archivo_nombre, fecha_lista, subido_por)
-           VALUES ($1, $2, $3, $4) RETURNING id""",
-        proveedor_id, filename, fecha_lista, subido_por,
-    )
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            if proveedor_id is None:
+                proveedor_id = await get_or_create_proveedor(conn, proveedor_nombre)
 
-    await conn.executemany(
-        """INSERT INTO partes
-            (lista_id, proveedor_id, referencia, referencia_norm, equivalencia,
-             descripcion, vehiculo, marca_vehiculo, precio, precio_con_desc,
-             descuento_pct, moneda, fecha_lista, archivo_origen, sheet_origen)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)""",
-        [
-            (
-                lista_id,
+            await conn.execute(
+                "UPDATE listas SET activa = false WHERE proveedor_id = $1",
                 proveedor_id,
-                r["referencia"],
-                r["referencia_norm"],
-                r["equivalencia"],
-                r["descripcion"],
-                r["vehiculo"],
-                r["marca_vehiculo"],
-                r["precio"],
-                r["precio_con_desc"],
-                r["descuento_pct"],
-                r["moneda"],
-                r["fecha_lista"],
-                r["archivo_origen"],
-                r["sheet_origen"],
             )
-            for r in registros
-        ],
-    )
 
-    await conn.execute(
-        "UPDATE listas SET total_registros = $1 WHERE id = $2",
-        len(registros), lista_id,
-    )
+            fecha_lista = registros[0].get("fecha_lista")
+            lista_id = await conn.fetchval(
+                """INSERT INTO listas (proveedor_id, archivo_nombre, fecha_lista, subido_por)
+                   VALUES ($1, $2, $3, $4) RETURNING id""",
+                proveedor_id, filename, fecha_lista, subido_por,
+            )
+
+            await insert_partes_bulk(conn, lista_id, proveedor_id, registros)
+
+            await conn.execute(
+                "UPDATE listas SET total_registros = $1 WHERE id = $2",
+                n, lista_id,
+            )
+
+    t_db = time.monotonic()
+    logger.info("BD %s: %s repuestos en %.1fs (total %.1fs)", filename, n, t_db - t_etl, t_db - t0)
 
     return {
         "ok": True,
@@ -358,12 +365,12 @@ async def _guardar_lista_en_conn(
         "archivo": filename,
         "proveedor": proveedor_nombre,
         "tipo_detectado": tipo_detectado,
-        "registros_cargados": len(registros),
+        "registros_cargados": n,
         "fecha_lista": str(fecha_lista) if fecha_lista else None,
         "estadisticas": etl.get("estadisticas", {}),
         "filas_descartadas": etl.get("filas_descartadas", 0),
         "mensaje": (
-            f"{len(registros):,} repuestos cargados "
+            f"{n:,} repuestos cargados "
             f"({proveedor_nombre}, formato {tipo_detectado})"
         ),
     }
@@ -384,11 +391,9 @@ async def _guardar_lista_desde_archivo(
     tmp_path = Path(f"/tmp/{Path(filename).name}")
     try:
         tmp_path.write_bytes(content)
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                return await _guardar_lista_en_conn(
-                    conn, tmp_path, filename, subido_por, proveedor_id, tipo
-                )
+        return await _guardar_lista_desde_path(
+            pool, tmp_path, filename, subido_por, proveedor_id, tipo
+        )
     except ListaUploadError as e:
         raise HTTPException(
             status_code=422,
@@ -520,7 +525,7 @@ async def start_lista_upload_job(
 ):
     """Inicia el procesamiento ETL del job en background."""
     await get_upload_job_status(app.state.pool, job_id, user)
-    return await start_upload_job(app.state.pool, job_id, _guardar_lista_en_conn)
+    return await start_upload_job(app.state.pool, job_id, _guardar_lista_desde_path)
 
 
 @app.post("/api/listas/upload-batch-async")
@@ -543,7 +548,7 @@ async def upload_listas_batch_async(
         user_id=user.get("id"),
         files=saved,
     )
-    schedule_upload_job(app.state.pool, job["job_id"], _guardar_lista_en_conn)
+    schedule_upload_job(app.state.pool, job["job_id"], _guardar_lista_desde_path)
     return job
 
 

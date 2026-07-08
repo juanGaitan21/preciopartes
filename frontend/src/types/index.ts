@@ -123,6 +123,8 @@ export interface JobArchivoStatus {
   estado: JobFileEstado
   lista_id: number | null
   registros_cargados: number
+  fase?: string
+  fase_detalle?: string
   resultado?: UploadResponse
   error?: UploadErrorItem
 }

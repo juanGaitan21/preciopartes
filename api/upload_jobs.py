@@ -305,6 +305,12 @@ def _build_job_response(job, files) -> dict:
                 item["error"] = err
         elif estado == "processing":
             procesando += 1
+            if row["resultado"]:
+                res = dict(row["resultado"])
+                if res.get("fase"):
+                    item["fase"] = res["fase"]
+                if res.get("detalle"):
+                    item["fase_detalle"] = res["detalle"]
         else:
             pendientes += 1
 
@@ -487,14 +493,15 @@ async def process_upload_job(pool, job_id: str, guardar_fn) -> None:
                 )
 
             try:
+                result = await guardar_fn(
+                    pool,
+                    file_path,
+                    filename,
+                    subido_por,
+                    file_id=file_id,
+                )
                 async with pool.acquire() as conn:
                     async with conn.transaction():
-                        result = await guardar_fn(
-                            conn,
-                            file_path,
-                            filename,
-                            subido_por,
-                        )
                         await conn.execute(
                             """UPDATE upload_job_archivos
                                SET estado = 'completed',
@@ -577,6 +584,25 @@ async def resume_pending_jobs(pool, guardar_fn) -> None:
     JOB_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     async with pool.acquire() as conn:
+        await conn.execute(
+            """UPDATE upload_job_archivos ja
+               SET estado = 'failed',
+                   error = '{"mensaje":"Interrumpido por reinicio del servidor","codigo":"INTERRUMPIDO"}'::jsonb,
+                   finalizado_en = now()
+               FROM upload_jobs j
+               WHERE ja.job_id = j.id
+                 AND ja.estado = 'processing'
+                 AND j.iniciado_en < now() - interval '30 minutes'"""
+        )
+        await conn.execute(
+            """UPDATE upload_jobs
+               SET estado = 'completed',
+                   mensaje = 'Job interrumpido. Vuelve a subir el archivo.',
+                   finalizado_en = now()
+               WHERE estado = 'processing'
+                 AND iniciado_en < now() - interval '30 minutes'"""
+        )
+
         rows = await conn.fetch(
             """SELECT id FROM upload_jobs
                WHERE listo_para_procesar = true

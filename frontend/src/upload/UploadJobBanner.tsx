@@ -61,8 +61,11 @@ export function UploadJobBanner() {
         </p>
       )}
 
-      {jobStatus?.mensaje && phase === 'processing' && (
-        <p className="mt-1 text-xs text-muted">{jobStatus.mensaje}</p>
+      {phase === 'processing' && jobStatus && jobStatus.archivos_procesando > 0 && (
+        <p className="mt-1 text-sm text-primary">
+          {jobStatus.archivos.find((a) => a.estado === 'processing')?.fase_detalle ||
+            'Procesando archivo...'}
+        </p>
       )}
 
       <p className="mt-2 text-xs text-warning">
@@ -89,7 +92,11 @@ export function UploadJobBanner() {
           {jobStatus.archivos.map((f) => (
             <li key={`${f.orden}-${f.archivo}`} className="flex justify-between gap-2 text-muted">
               <span className="truncate">{f.archivo}</span>
-              <span className="shrink-0 capitalize">{f.estado}</span>
+              <span className="shrink-0 text-right">
+                {f.estado === 'processing' && f.fase_detalle
+                  ? f.fase_detalle
+                  : f.estado}
+              </span>
             </li>
           ))}
         </ul>
