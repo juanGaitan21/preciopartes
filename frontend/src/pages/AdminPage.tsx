@@ -281,7 +281,7 @@ function UsuariosSection() {
 
 function CargarListasSection() {
   const { markStepDone } = useOnboarding()
-  const { uploadFiles, isActive, lastResult, phase } = useUploadJob()
+  const { uploadFiles, isActive, lastResult, phase, jobStatus, cancelJob } = useUploadJob()
   const [archivos, setArchivos] = useState<File[]>([])
   const [error, setError] = useState('')
 
@@ -322,9 +322,24 @@ function CargarListasSection() {
 
       {isActive && (
         <div className="mb-4 rounded-lg border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-text">
-          {phase === 'sending'
-            ? 'Subiendo archivos al servidor... Mira el panel de progreso abajo a la derecha.'
-            : 'Procesando listas en segundo plano. Puedes seguir usando la aplicacion.'}
+          <p>
+            {phase === 'sending'
+              ? 'Subiendo archivos al servidor...'
+              : jobStatus?.mensaje || 'Procesando listas en segundo plano.'}
+          </p>
+          {phase === 'processing' && jobStatus && (
+            <p className="mt-1 text-xs text-muted">
+              Progreso: {jobStatus.progreso_pct}% · {jobStatus.archivos_completados} de{' '}
+              {jobStatus.total_archivos} archivo(s)
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => void cancelJob()}
+            className="mt-3 rounded-lg border border-danger/40 px-3 py-1.5 text-xs font-medium text-danger hover:bg-danger/10"
+          >
+            Cancelar carga y liberar formulario
+          </button>
         </div>
       )}
 

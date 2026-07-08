@@ -614,7 +614,7 @@ async def cancel_upload_job(pool, job_id: str, user: Optional[dict] = None) -> d
         if not job:
             raise HTTPException(status_code=404, detail="Job no encontrado")
 
-        if user and job["user_id"] and job["user_id"] != user.get("id"):
+        if user and job["user_id"] and to_int(job["user_id"]) != to_int(user.get("id")):
             if user.get("rol") != "admin":
                 raise HTTPException(status_code=403, detail="No autorizado")
 
@@ -672,6 +672,15 @@ async def resume_pending_jobs(pool, guardar_fn) -> None:
                    finalizado_en = now()
                WHERE estado = 'processing'
                  AND iniciado_en < now() - interval '30 minutes'"""
+        )
+        await conn.execute(
+            """UPDATE upload_jobs
+               SET estado = 'completed',
+                   mensaje = 'Job abandonado. Vuelve a subir el archivo.',
+                   finalizado_en = now()
+               WHERE estado = 'queued'
+                 AND listo_para_procesar = false
+                 AND creado_en < now() - interval '1 hour'"""
         )
 
         rows = await conn.fetch(
