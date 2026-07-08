@@ -157,6 +157,21 @@ export const api = {
     return request<UploadJobResponse>('/api/listas/upload-batch-async', { method: 'POST', body: form })
   },
 
+  createUploadJob: () =>
+    request<UploadJobResponse>('/api/listas/jobs', { method: 'POST' }),
+
+  addFileToUploadJob: (jobId: string, archivo: File) => {
+    const form = new FormData()
+    form.append('archivo', archivo)
+    return request<{ job_id: string; archivo: string; total_archivos: number; mensaje: string }>(
+      `/api/listas/jobs/${jobId}/archivos`,
+      { method: 'POST', body: form },
+    )
+  },
+
+  startUploadJob: (jobId: string) =>
+    request<UploadJobResponse>(`/api/listas/jobs/${jobId}/start`, { method: 'POST' }),
+
   getUploadJobStatus: (jobId: string) =>
     request<UploadJobStatus>(`/api/listas/jobs/${jobId}`),
 

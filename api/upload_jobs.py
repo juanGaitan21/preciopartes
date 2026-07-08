@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS upload_jobs (
     total_registros INTEGER NOT NULL DEFAULT 0,
     mensaje         TEXT DEFAULT '',
     directorio      TEXT NOT NULL,
+    listo_para_procesar BOOLEAN NOT NULL DEFAULT false,
     creado_en       TIMESTAMP DEFAULT now(),
     iniciado_en     TIMESTAMP,
     finalizado_en   TIMESTAMP
@@ -74,12 +75,126 @@ def _utcnow() -> datetime:
 async def ensure_upload_job_tables(pool) -> None:
     async with pool.acquire() as conn:
         await conn.execute(JOB_SCHEMA)
+        await conn.execute(
+            "ALTER TABLE upload_jobs ADD COLUMN IF NOT EXISTS listo_para_procesar BOOLEAN NOT NULL DEFAULT false"
+        )
 
 
 def _job_dir(job_id: str) -> Path:
     path = JOB_DATA_DIR / job_id
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+async def create_empty_upload_job(
+    pool,
+    *,
+    subido_por: str,
+    user_id: Optional[int],
+) -> dict:
+    job_id = str(uuid.uuid4())
+    job_path = _job_dir(job_id)
+
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """INSERT INTO upload_jobs
+               (id, estado, subido_por, user_id, total_archivos, directorio, listo_para_procesar)
+               VALUES ($1, 'queued', $2, $3, 0, $4, false)""",
+            job_id,
+            subido_por,
+            user_id,
+            str(job_path),
+        )
+
+    return {
+        "job_id": job_id,
+        "total_archivos": 0,
+        "estado": "queued",
+        "mensaje": "Job creado. Sube los archivos uno por uno y luego inicia el procesamiento.",
+    }
+
+
+async def append_file_to_upload_job(
+    pool,
+    job_id: str,
+    filename: str,
+    content: bytes,
+) -> dict:
+    safe_name = Path(filename).name
+    if not safe_name:
+        raise HTTPException(status_code=400, detail="Nombre de archivo invalido")
+
+    async with pool.acquire() as conn:
+        job = await _fetch_job_row(conn, job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job no encontrado")
+        if job["estado"] != "queued":
+            raise HTTPException(status_code=409, detail="El job ya esta en procesamiento")
+        if job["listo_para_procesar"]:
+            raise HTTPException(status_code=409, detail="El job ya fue iniciado")
+
+        orden = await conn.fetchval(
+            "SELECT COUNT(*) FROM upload_job_archivos WHERE job_id = $1",
+            job_id,
+        )
+        job_path = Path(job["directorio"])
+        dest = job_path / safe_name
+        dest.write_bytes(content)
+
+        async with conn.transaction():
+            await conn.execute(
+                """INSERT INTO upload_job_archivos
+                   (job_id, archivo_nombre, orden, estado)
+                   VALUES ($1, $2, $3, 'pending')""",
+                job_id,
+                safe_name,
+                orden,
+            )
+            total = await conn.fetchval(
+                "SELECT COUNT(*) FROM upload_job_archivos WHERE job_id = $1",
+                job_id,
+            )
+            await conn.execute(
+                "UPDATE upload_jobs SET total_archivos = $2 WHERE id = $1",
+                job_id,
+                total,
+            )
+
+    return {
+        "job_id": job_id,
+        "archivo": safe_name,
+        "orden": orden,
+        "total_archivos": total,
+        "mensaje": f"Archivo {safe_name} recibido ({orden + 1} de {total})",
+    }
+
+
+async def start_upload_job(pool, job_id: str, guardar_fn) -> dict:
+    async with pool.acquire() as conn:
+        job = await _fetch_job_row(conn, job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job no encontrado")
+        if job["listo_para_procesar"]:
+            return {
+                "job_id": job_id,
+                "estado": job["estado"],
+                "mensaje": "El job ya fue iniciado",
+            }
+        if job["total_archivos"] == 0:
+            raise HTTPException(status_code=400, detail="No hay archivos en el job")
+
+        await conn.execute(
+            "UPDATE upload_jobs SET listo_para_procesar = true WHERE id = $1",
+            job_id,
+        )
+
+    schedule_upload_job(pool, job_id, guardar_fn)
+    return {
+        "job_id": job_id,
+        "estado": "queued",
+        "total_archivos": job["total_archivos"],
+        "mensaje": f"Procesamiento iniciado para {job['total_archivos']} archivo(s)",
+    }
 
 
 async def create_upload_job(
@@ -99,8 +214,8 @@ async def create_upload_job(
         async with conn.transaction():
             await conn.execute(
                 """INSERT INTO upload_jobs
-                   (id, estado, subido_por, user_id, total_archivos, directorio)
-                   VALUES ($1, 'queued', $2, $3, $4, $5)""",
+                   (id, estado, subido_por, user_id, total_archivos, directorio, listo_para_procesar)
+                   VALUES ($1, 'queued', $2, $3, $4, $5, true)""",
                 job_id,
                 subido_por,
                 user_id,
@@ -314,6 +429,9 @@ async def process_upload_job(pool, job_id: str, guardar_fn) -> None:
                 return
             if job["estado"] == "completed":
                 return
+            if not job["listo_para_procesar"]:
+                logger.info("Job %s aun no listo para procesar", job_id)
+                return
 
             await conn.execute(
                 """UPDATE upload_jobs
@@ -461,7 +579,8 @@ async def resume_pending_jobs(pool, guardar_fn) -> None:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """SELECT id FROM upload_jobs
-               WHERE estado IN ('queued', 'processing')
+               WHERE listo_para_procesar = true
+                 AND estado IN ('queued', 'processing')
                ORDER BY creado_en"""
         )
 

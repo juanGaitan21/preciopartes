@@ -2,11 +2,10 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../api/client'
 import { useOnboarding } from '../onboarding/OnboardingContext'
-import type { BatchUploadResponse, JobArchivoStatus, Lista, Rol, UploadJobStatus, User } from '../types'
+import type { Lista, Rol, User } from '../types'
+import { useUploadJob } from '../upload/UploadJobContext'
 
 const ADMIN_SISTEMA = 'admin@preciopartes.com'
-const ACTIVE_JOB_KEY = 'pp_active_upload_job'
-const JOB_POLL_MS = 2000
 
 function isAdminSistema(email: string) {
   return email.toLowerCase() === ADMIN_SISTEMA
@@ -280,123 +279,15 @@ function UsuariosSection() {
 // Carga de listas Excel (background jobs)
 // ---------------------------------------------------------------------------
 
-function jobToDetalle(job: UploadJobStatus): BatchUploadResponse {
-  return {
-    ok: job.ok,
-    archivos_ok: job.archivos_completados,
-    archivos_error: job.archivos_error,
-    total_registros: job.total_registros,
-    resultados: job.resultados,
-    errores: job.errores,
-    mensaje: job.mensaje,
-  }
-}
-
-function archivoEstadoLabel(estado: JobArchivoStatus['estado']) {
-  switch (estado) {
-    case 'pending':
-      return 'En cola'
-    case 'processing':
-      return 'Procesando'
-    case 'completed':
-      return 'Listo'
-    case 'failed':
-      return 'Error'
-  }
-}
-
-function archivoEstadoClass(estado: JobArchivoStatus['estado']) {
-  switch (estado) {
-    case 'pending':
-      return 'text-muted'
-    case 'processing':
-      return 'text-primary'
-    case 'completed':
-      return 'text-accent'
-    case 'failed':
-      return 'text-danger'
-  }
-}
-
 function CargarListasSection() {
   const { markStepDone } = useOnboarding()
+  const { uploadFiles, isActive, lastResult, phase } = useUploadJob()
   const [archivos, setArchivos] = useState<File[]>([])
-  const [uploading, setUploading] = useState(false)
-  const [uploadPhase, setUploadPhase] = useState<'idle' | 'sending' | 'processing'>('idle')
-  const [jobStatus, setJobStatus] = useState<UploadJobStatus | null>(null)
-  const [activeJobId, setActiveJobId] = useState<string | null>(null)
-  const [result, setResult] = useState('')
   const [error, setError] = useState('')
-  const [detalle, setDetalle] = useState<BatchUploadResponse | null>(null)
-
-  const totalMb = archivos.reduce((sum, f) => sum + f.size, 0) / (1024 * 1024)
-  const isBusy = uploading || uploadPhase !== 'idle'
-
-  const pollJob = useCallback(async (jobId: string) => {
-    const status = await api.getUploadJobStatus(jobId)
-    setJobStatus(status)
-
-    if (status.estado === 'completed') {
-      setDetalle(jobToDetalle(status))
-      setResult(status.mensaje)
-      markStepDone('cargar_listas')
-      setUploading(false)
-      setUploadPhase('idle')
-      setActiveJobId(null)
-      localStorage.removeItem(ACTIVE_JOB_KEY)
-      setArchivos([])
-      return true
-    }
-
-    return false
-  }, [markStepDone])
 
   useEffect(() => {
-    const savedJobId = localStorage.getItem(ACTIVE_JOB_KEY)
-    if (!savedJobId) return
-
-    let cancelled = false
-    let interval: number | undefined
-
-    const start = async () => {
-      try {
-        setUploading(true)
-        setUploadPhase('processing')
-        setActiveJobId(savedJobId)
-        const done = await pollJob(savedJobId)
-        if (cancelled || done) return
-
-        interval = window.setInterval(async () => {
-          if (cancelled) return
-          try {
-            const finished = await pollJob(savedJobId)
-            if (finished && interval) window.clearInterval(interval)
-          } catch (err) {
-            if (interval) window.clearInterval(interval)
-            if (!cancelled) {
-              setError(err instanceof Error ? err.message : 'Error consultando el progreso')
-              setUploading(false)
-              setUploadPhase('idle')
-            }
-          }
-        }, JOB_POLL_MS)
-      } catch (err) {
-        if (!cancelled) {
-          localStorage.removeItem(ACTIVE_JOB_KEY)
-          setError(err instanceof Error ? err.message : 'No se pudo recuperar la carga en curso')
-          setUploading(false)
-          setUploadPhase('idle')
-        }
-      }
-    }
-
-    void start()
-
-    return () => {
-      cancelled = true
-      if (interval) window.clearInterval(interval)
-    }
-  }, [pollJob])
+    if (lastResult?.ok) markStepDone('cargar_listas')
+  }, [lastResult, markStepDone])
 
   const handleUpload = async (e: FormEvent) => {
     e.preventDefault()
@@ -404,159 +295,47 @@ function CargarListasSection() {
       setError('Selecciona uno o mas archivos Excel')
       return
     }
-
-    setUploading(true)
-    setUploadPhase('sending')
     setError('')
-    setResult('')
-    setDetalle(null)
-    setJobStatus(null)
-
     try {
-      const job = await api.uploadListasBatchAsync(archivos)
-      localStorage.setItem(ACTIVE_JOB_KEY, job.job_id)
-      setActiveJobId(job.job_id)
-      setUploadPhase('processing')
-
-      const done = await pollJob(job.job_id)
-      if (done) return
-
-      await new Promise<void>((resolve, reject) => {
-        const interval = window.setInterval(async () => {
-          try {
-            const finished = await pollJob(job.job_id)
-            if (finished) {
-              window.clearInterval(interval)
-              resolve()
-            }
-          } catch (err) {
-            window.clearInterval(interval)
-            reject(err)
-          }
-        }, JOB_POLL_MS)
-      })
+      await uploadFiles(archivos)
+      setArchivos([])
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al iniciar la carga')
-      setUploading(false)
-      setUploadPhase('idle')
-      setActiveJobId(null)
-      localStorage.removeItem(ACTIVE_JOB_KEY)
+      const msg = err instanceof Error ? err.message : 'Error al subir archivos'
+      setError(
+        msg === 'Failed to fetch'
+          ? 'No se pudo conectar con el servidor. Verifica tu conexion o intenta con menos archivos a la vez.'
+          : msg,
+      )
     }
   }
 
-  const progressFiles = jobStatus?.archivos ?? archivos.map((f, i) => ({
-    archivo: f.name,
-    orden: i,
-    estado: 'pending' as const,
-    lista_id: null,
-    registros_cargados: 0,
-  }))
-
-  const progressPct = jobStatus?.progreso_pct ?? (uploadPhase === 'sending' ? 0 : 0)
+  const detalle = lastResult
 
   return (
     <div className="max-w-2xl">
       <p className="mb-4 text-sm text-muted">
         Arrastra o selecciona todas las listas de precios (.xls / .xlsx). El sistema detecta
         automaticamente el proveedor, normaliza los datos y carga todo. Puedes subir 16 o mas
-        archivos de una vez. La carga corre en segundo plano: puedes esperar en esta pagina o
-        volver mas tarde; el progreso se guarda aunque recargues.
+        archivos de una vez. La carga corre en segundo plano: puedes ir al Comparador u otras
+        secciones mientras procesa. El progreso aparece abajo a la derecha.
       </p>
 
-      <form
-        onSubmit={handleUpload}
-        className={`relative space-y-4 rounded-xl border border-border bg-surface p-5 ${isBusy ? 'pointer-events-none' : ''}`}
-      >
-        {isBusy && (
-          <div
-            className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-bg/85 backdrop-blur-sm"
-            role="status"
-            aria-live="polite"
-            aria-busy="true"
-          >
-            <div className="mx-4 w-full max-w-lg rounded-xl border border-primary/40 bg-surface p-6 shadow-xl">
-              <div className="flex items-start gap-4">
-                <div
-                  className="mt-0.5 h-10 w-10 shrink-0 animate-spin rounded-full border-[3px] border-primary border-t-transparent"
-                  aria-hidden="true"
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="text-base font-semibold text-text">
-                    {uploadPhase === 'sending'
-                      ? 'Subiendo archivos al servidor...'
-                      : 'Procesando listas en segundo plano'}
-                  </p>
-                  <p className="mt-1 text-sm text-muted">
-                    {jobStatus
-                      ? `${jobStatus.archivos_completados + jobStatus.archivos_error} de ${jobStatus.total_archivos} archivo(s) listos`
-                      : `${archivos.length} archivo(s)`}
-                    {totalMb > 0 && ` · ${totalMb.toFixed(1)} MB`}
-                    {jobStatus && jobStatus.total_registros > 0 &&
-                      ` · ${jobStatus.total_registros.toLocaleString('es-CO')} repuestos cargados`}
-                  </p>
-                  {jobStatus?.mensaje && (
-                    <p className="mt-1 text-sm text-muted">{jobStatus.mensaje}</p>
-                  )}
-                  <p className="mt-2 text-sm font-medium text-warning">
-                    No cierres el navegador hasta terminar. Si recargas, el proceso continua.
-                  </p>
-                </div>
-              </div>
+      {isActive && (
+        <div className="mb-4 rounded-lg border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-text">
+          {phase === 'sending'
+            ? 'Subiendo archivos al servidor... Mira el panel de progreso abajo a la derecha.'
+            : 'Procesando listas en segundo plano. Puedes seguir usando la aplicacion.'}
+        </div>
+      )}
 
-              <div className="mt-5">
-                <div className="mb-1 flex justify-between text-xs text-muted">
-                  <span>Progreso</span>
-                  <span>{progressPct}%</span>
-                </div>
-                <div className="overflow-hidden rounded-full bg-border">
-                  <div
-                    className="h-2 rounded-full bg-primary transition-all duration-500"
-                    style={{ width: `${Math.max(progressPct, uploadPhase === 'sending' ? 5 : 0)}%` }}
-                  />
-                </div>
-              </div>
-
-              <ul className="mt-4 max-h-48 space-y-2 overflow-y-auto rounded-lg border border-border bg-bg p-3">
-                {progressFiles.map((f) => (
-                  <li key={`${f.orden}-${f.archivo}`} className="flex items-center gap-2 text-sm">
-                    {f.estado === 'processing' && (
-                      <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                    )}
-                    {f.estado === 'completed' && (
-                      <span className="h-2 w-2 shrink-0 rounded-full bg-accent" />
-                    )}
-                    {f.estado === 'failed' && (
-                      <span className="h-2 w-2 shrink-0 rounded-full bg-danger" />
-                    )}
-                    {f.estado === 'pending' && (
-                      <span className="h-2 w-2 shrink-0 rounded-full bg-border" />
-                    )}
-                    <span className="min-w-0 flex-1 truncate text-text">{f.archivo}</span>
-                    <span className={`shrink-0 text-xs font-medium ${archivoEstadoClass(f.estado)}`}>
-                      {archivoEstadoLabel(f.estado)}
-                      {f.estado === 'completed' && f.registros_cargados > 0 &&
-                        ` · ${f.registros_cargados.toLocaleString('es-CO')}`}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-
-              {activeJobId && (
-                <p className="mt-3 text-center text-xs text-muted">
-                  Job: {activeJobId.slice(0, 8)}...
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-
+      <form onSubmit={handleUpload} className="space-y-4 rounded-xl border border-border bg-surface p-5">
         <div>
           <label className="mb-1 block text-sm font-medium text-text">Archivos Excel</label>
           <input
             type="file"
             accept=".xls,.xlsx,.xlsm"
             multiple
-            disabled={isBusy}
+            disabled={isActive}
             className="w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-accent-dim file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-accent disabled:opacity-50"
             onChange={(e) => setArchivos(Array.from(e.target.files ?? []))}
           />
@@ -572,15 +351,14 @@ function CargarListasSection() {
         </div>
 
         {error && <p className="text-sm text-danger">{error}</p>}
-        {result && <p className="text-sm text-accent">{result}</p>}
+        {detalle && <p className="text-sm text-accent">{detalle.mensaje}</p>}
 
         {detalle && detalle.resultados.length > 0 && (
           <div className="space-y-3">
             <div className="rounded-lg border border-accent/30 bg-accent/10 p-4">
               <p className="text-sm font-medium text-accent">Carga completada</p>
               <p className="mt-1 text-sm text-muted">
-                Carga exitosa: los repuestos de esta subida ya están disponibles. Ve al Comparador
-                para buscar (solo se usan las listas activas por proveedor).
+                Los repuestos ya estan disponibles en el Comparador.
               </p>
               <Link
                 to="/comparador"
@@ -599,20 +377,6 @@ function CargarListasSection() {
                     {' — '}
                     {r.registros_cargados.toLocaleString('es-CO')} repuestos
                     {r.proveedor && <span className="text-muted"> ({r.proveedor})</span>}
-                    {r.tipo_detectado && (
-                      <span className="ml-1 text-xs text-accent">formato {r.tipo_detectado}</span>
-                    )}
-                    {r.estadisticas && r.estadisticas.filas_descartadas_total > 0 && (
-                      <span className="mt-0.5 block text-xs text-muted">
-                        {r.estadisticas.filas_validas_parseadas.toLocaleString('es-CO')} filas leídas
-                        {r.estadisticas.duplicados_exactos > 0 &&
-                          ` · ${r.estadisticas.duplicados_exactos.toLocaleString('es-CO')} duplicadas`}
-                        {r.estadisticas.rechazados_validacion > 0 &&
-                          ` · ${r.estadisticas.rechazados_validacion.toLocaleString('es-CO')} rechazadas`}
-                        {' · '}
-                        {r.estadisticas.filas_descartadas_total.toLocaleString('es-CO')} descartadas en total
-                      </span>
-                    )}
                   </li>
                 ))}
               </ul>
@@ -638,24 +402,14 @@ function CargarListasSection() {
 
         <button
           type="submit"
-          disabled={isBusy || archivos.length === 0}
+          disabled={isActive || archivos.length === 0}
           className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent-dim px-5 py-2.5 text-sm font-semibold text-white hover:bg-accent disabled:opacity-50 sm:w-auto"
         >
-          {isBusy && (
-            <span
-              className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
-              aria-hidden="true"
-            />
-          )}
-          {isBusy
-            ? uploadPhase === 'sending'
-              ? 'Subiendo archivos...'
-              : `Procesando ${jobStatus?.total_archivos ?? archivos.length} archivo(s)...`
-            : detalle
-              ? 'Subir otra tanda (selecciona archivos arriba)'
-              : archivos.length > 0
-                ? `Cargar ${archivos.length} lista(s)`
-                : 'Cargar listas'}
+          {isActive
+            ? 'Carga en curso...'
+            : archivos.length > 0
+              ? `Cargar ${archivos.length} lista(s)`
+              : 'Cargar listas'}
         </button>
       </form>
     </div>

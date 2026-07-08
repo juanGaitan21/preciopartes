@@ -27,11 +27,14 @@ from api.db_init import init_database
 from api.routes_auth import router as auth_router
 from api.upload_jobs import (
     ListaUploadError,
+    append_file_to_upload_job,
+    create_empty_upload_job,
     create_upload_job,
     ensure_upload_job_tables,
     get_upload_job_status,
     resume_pending_jobs,
     schedule_upload_job,
+    start_upload_job,
 )
 
 # ETL propio
@@ -479,6 +482,45 @@ async def upload_listas_batch(
             + (f", {len(errores)} con error" if errores else "")
         ),
     }
+
+
+@app.post("/api/listas/jobs")
+async def create_lista_upload_job(
+    user: dict = Depends(require_permission("upload")),
+):
+    """Crea un job vacio para subir archivos uno por uno (evita timeout)."""
+    return await create_empty_upload_job(
+        app.state.pool,
+        subido_por=user["nombre"],
+        user_id=user.get("id"),
+    )
+
+
+@app.post("/api/listas/jobs/{job_id}/archivos")
+async def add_archivo_to_upload_job(
+    job_id: str,
+    archivo: UploadFile = File(...),
+    user: dict = Depends(require_permission("upload")),
+):
+    """Agrega un archivo al job. Subir de a uno evita timeouts con archivos grandes."""
+    await get_upload_job_status(app.state.pool, job_id, user)
+    content = await archivo.read()
+    return await append_file_to_upload_job(
+        app.state.pool,
+        job_id,
+        archivo.filename,
+        content,
+    )
+
+
+@app.post("/api/listas/jobs/{job_id}/start")
+async def start_lista_upload_job(
+    job_id: str,
+    user: dict = Depends(require_permission("upload")),
+):
+    """Inicia el procesamiento ETL del job en background."""
+    await get_upload_job_status(app.state.pool, job_id, user)
+    return await start_upload_job(app.state.pool, job_id, _guardar_lista_en_conn)
 
 
 @app.post("/api/listas/upload-batch-async")

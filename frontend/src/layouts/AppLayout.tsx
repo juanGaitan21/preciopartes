@@ -3,13 +3,16 @@ import { Outlet } from 'react-router-dom'
 import { OnboardingGuide } from '../onboarding/OnboardingGuide'
 import { OnboardingProvider } from '../onboarding/OnboardingContext'
 import { Sidebar } from '../components/Sidebar'
+import { UploadJobBanner } from '../upload/UploadJobBanner'
+import { UploadJobProvider } from '../upload/UploadJobContext'
 
 export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   return (
     <OnboardingProvider>
-      <div className="flex h-full min-h-screen bg-bg">
+      <UploadJobProvider>
+        <div className="flex h-full min-h-screen bg-bg">
         <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
         <div className="flex flex-1 flex-col overflow-hidden">
@@ -32,7 +35,9 @@ export function AppLayout() {
         </div>
 
         <OnboardingGuide />
+        <UploadJobBanner />
       </div>
+      </UploadJobProvider>
     </OnboardingProvider>
   )
 }
