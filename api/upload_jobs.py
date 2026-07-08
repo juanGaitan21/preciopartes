@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import HTTPException
+from api.serialize import json_safe, safe_json, to_int
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +78,14 @@ async def ensure_upload_job_tables(pool) -> None:
         await conn.execute(
             "ALTER TABLE upload_jobs ADD COLUMN IF NOT EXISTS listo_para_procesar BOOLEAN NOT NULL DEFAULT false"
         )
+        has_col = await conn.fetchval(
+            """SELECT COUNT(*) FROM information_schema.columns
+               WHERE table_name = 'upload_jobs' AND column_name = 'listo_para_procesar'"""
+        )
+        if not has_col:
+            logger.error("Columna listo_para_procesar no existe tras migracion")
+        else:
+            logger.info("Tablas upload_jobs OK (listo_para_procesar presente)")
 
 
 def _job_dir(job_id: str) -> Path:
@@ -285,29 +293,29 @@ def _build_job_response(job, files) -> dict:
         estado = row["estado"]
         item = {
             "archivo": row["archivo_nombre"],
-            "orden": row["orden"],
+            "orden": to_int(row["orden"]),
             "estado": estado,
-            "lista_id": row["lista_id"],
-            "registros_cargados": row["registros_cargados"] or 0,
+            "lista_id": to_int(row["lista_id"]) if row["lista_id"] else None,
+            "registros_cargados": to_int(row["registros_cargados"]),
         }
 
         if estado == "completed":
             completados += 1
-            total_registros += row["registros_cargados"] or 0
+            total_registros += to_int(row["registros_cargados"])
             if row["resultado"]:
-                res = dict(row["resultado"])
+                res = json_safe(safe_json(row["resultado"]))
                 resultados.append(res)
                 item["resultado"] = res
         elif estado == "failed":
             con_error += 1
             if row["error"]:
-                err = dict(row["error"])
+                err = json_safe(safe_json(row["error"]))
                 errores.append(err)
                 item["error"] = err
         elif estado == "processing":
             procesando += 1
             if row["resultado"]:
-                res = dict(row["resultado"])
+                res = json_safe(safe_json(row["resultado"]))
                 if res.get("fase"):
                     item["fase"] = res["fase"]
                 if res.get("detalle"):
@@ -317,9 +325,9 @@ def _build_job_response(job, files) -> dict:
 
         archivos.append(item)
 
-    total = job["total_archivos"] or len(files)
+    total = to_int(job["total_archivos"]) or len(files)
     terminados = completados + con_error
-    progreso_pct = round((terminados / total) * 100, 1) if total else 0
+    progreso_pct = round((terminados / total) * 100, 1) if total else 0.0
 
     mensaje = job["mensaje"] or ""
     if not mensaje:
@@ -342,7 +350,7 @@ def _build_job_response(job, files) -> dict:
         "archivos_procesando": procesando,
         "archivos_pendientes": pendientes,
         "progreso_pct": progreso_pct,
-        "total_registros": total_registros,
+        "total_registros": to_int(total_registros),
         "archivos": archivos,
         "resultados": resultados,
         "errores": errores,
@@ -355,18 +363,24 @@ def _build_job_response(job, files) -> dict:
 
 
 async def get_upload_job_status(pool, job_id: str, user: Optional[dict] = None) -> dict:
-    async with pool.acquire() as conn:
-        job = await _fetch_job_row(conn, job_id)
-        if not job:
-            raise HTTPException(status_code=404, detail="Job no encontrado")
+    try:
+        async with pool.acquire() as conn:
+            job = await _fetch_job_row(conn, job_id)
+            if not job:
+                raise HTTPException(status_code=404, detail="Job no encontrado")
 
-        if user and job["user_id"] and job["user_id"] != user.get("id"):
-            if user.get("rol") != "admin":
-                raise HTTPException(status_code=403, detail="No autorizado para ver este job")
+            if user and job["user_id"] and to_int(job["user_id"]) != to_int(user.get("id")):
+                if user.get("rol") != "admin":
+                    raise HTTPException(status_code=403, detail="No autorizado para ver este job")
 
-        files = await _fetch_job_files(conn, job_id)
+            files = await _fetch_job_files(conn, job_id)
 
-    return _build_job_response(job, files)
+        return _build_job_response(job, files)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error leyendo job %s: %s", job_id, e)
+        raise HTTPException(status_code=500, detail=f"Error leyendo estado del job: {e}") from e
 
 
 async def _update_job_counters(conn, job_id: str) -> None:

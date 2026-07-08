@@ -55,10 +55,10 @@ export function UploadJobProvider({ children }: { children: ReactNode }) {
     const status = await api.getUploadJobStatus(jobId)
     setJobStatus(status)
 
-    if (status.estado === 'completed') {
+    if (status.estado === 'completed' || status.estado === 'failed') {
       setSendingProgress(null)
       localStorage.removeItem(ACTIVE_JOB_KEY)
-      if (status.mensaje.includes('Cancelado')) {
+      if (status.estado === 'completed' && status.mensaje.includes('Cancelado')) {
         setPhase('idle')
         setJobStatus(null)
         setActiveJobId(null)
@@ -87,13 +87,42 @@ export function UploadJobProvider({ children }: { children: ReactNode }) {
             try {
               const finished = await pollJob(jobId)
               if (finished) window.clearInterval(interval)
-            } catch {
+            } catch (err) {
               window.clearInterval(interval)
+              setPhase('idle')
+              setSendingProgress(null)
+              setActiveJobId(null)
+              localStorage.removeItem(ACTIVE_JOB_KEY)
+              setJobStatus(null)
+              const msg =
+                err instanceof Error ? err.message : 'Error consultando el progreso de la carga'
+              setLastResult({
+                ok: false,
+                archivos_ok: 0,
+                archivos_error: 1,
+                total_registros: 0,
+                resultados: [],
+                errores: [{ archivo: '(sistema)', mensaje: msg, codigo: 'POLL_ERROR' }],
+                mensaje: msg,
+              })
+              setPhase('done')
             }
           }, JOB_POLL_MS)
-        } catch {
+        } catch (err) {
           setPhase('idle')
           setSendingProgress(null)
+          const msg =
+            err instanceof Error ? err.message : 'Error consultando el progreso de la carga'
+          setLastResult({
+            ok: false,
+            archivos_ok: 0,
+            archivos_error: 1,
+            total_registros: 0,
+            resultados: [],
+            errores: [{ archivo: '(sistema)', mensaje: msg, codigo: 'POLL_ERROR' }],
+            mensaje: msg,
+          })
+          setPhase('done')
         }
       })()
     },
