@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { useUploadJob } from './UploadJobContext'
 
 export function UploadJobBanner() {
-  const { phase, jobStatus, sendingProgress, activeJobId, lastResult, isActive, cancelJob, dismissJob } =
+  const { phase, jobStatus, sendingProgress, activeJobId, lastResult, isActive, resetUpload, dismissJob } =
     useUploadJob()
 
   if (!isActive && !lastResult) return null
@@ -145,10 +145,10 @@ export function UploadJobBanner() {
 
       <button
         type="button"
-        onClick={() => void cancelJob()}
+        onClick={() => void resetUpload()}
         className="mt-3 w-full rounded-lg border border-danger/40 px-3 py-2 text-xs font-medium text-danger hover:bg-danger/10"
       >
-        Cancelar carga
+        Liberar formulario
       </button>
     </div>
   )

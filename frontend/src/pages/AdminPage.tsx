@@ -281,13 +281,30 @@ function UsuariosSection() {
 
 function CargarListasSection() {
   const { markStepDone } = useOnboarding()
-  const { uploadFiles, isActive, lastResult, phase, jobStatus, cancelJob } = useUploadJob()
+  const { uploadFiles, isActive, lastResult, phase, jobStatus, resetUpload } = useUploadJob()
   const [archivos, setArchivos] = useState<File[]>([])
   const [error, setError] = useState('')
+  const [liberadoMsg, setLiberadoMsg] = useState('')
 
   useEffect(() => {
     if (lastResult?.ok) markStepDone('cargar_listas')
   }, [lastResult, markStepDone])
+
+  const handleLiberarFormulario = async () => {
+    const enCurso = isActive
+    if (
+      enCurso &&
+      !confirm(
+        '¿Liberar el formulario?\n\nSi hay una carga en curso, se cancelara. Podras seleccionar archivos y subir de nuevo.',
+      )
+    ) {
+      return
+    }
+    await resetUpload()
+    setArchivos([])
+    setError('')
+    setLiberadoMsg('Formulario liberado. Ya puedes subir archivos de nuevo.')
+  }
 
   const handleUpload = async (e: FormEvent) => {
     e.preventDefault()
@@ -335,10 +352,26 @@ function CargarListasSection() {
           )}
           <button
             type="button"
-            onClick={() => void cancelJob()}
-            className="mt-3 rounded-lg border border-danger/40 px-3 py-1.5 text-xs font-medium text-danger hover:bg-danger/10"
+            onClick={() => void handleLiberarFormulario()}
+            className="mt-3 rounded-lg border border-danger/40 bg-danger/10 px-4 py-2 text-sm font-medium text-danger hover:bg-danger/20"
           >
-            Cancelar carga y liberar formulario
+            Liberar formulario
+          </button>
+        </div>
+      )}
+
+      {!isActive && (
+        <div className="mb-4 rounded-lg border border-border bg-bg px-4 py-3 text-sm">
+          <p className="text-muted">
+            ¿El boton dice &quot;Carga en curso&quot; y no deja subir? Usa esto para desbloquear
+            el formulario sin abrir la consola del navegador.
+          </p>
+          <button
+            type="button"
+            onClick={() => void handleLiberarFormulario()}
+            className="mt-2 rounded-lg border border-warning/50 px-4 py-2 text-sm font-medium text-warning hover:bg-warning/10"
+          >
+            Liberar formulario
           </button>
         </div>
       )}
@@ -366,6 +399,7 @@ function CargarListasSection() {
         </div>
 
         {error && <p className="text-sm text-danger">{error}</p>}
+        {liberadoMsg && <p className="text-sm text-accent">{liberadoMsg}</p>}
         {detalle && <p className="text-sm text-accent">{detalle.mensaje}</p>}
 
         {detalle && detalle.resultados.length > 0 && (

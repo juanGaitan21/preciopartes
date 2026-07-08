@@ -23,6 +23,7 @@ interface UploadJobContextValue {
   isActive: boolean
   uploadFiles: (files: File[]) => Promise<void>
   cancelJob: () => Promise<void>
+  resetUpload: () => Promise<void>
   clearResult: () => void
   dismissJob: () => void
 }
@@ -272,6 +273,8 @@ export function UploadJobProvider({ children }: { children: ReactNode }) {
     setLastResult(null)
   }, [activeJobId, resetActiveJob])
 
+  const resetUpload = cancelJob
+
   const clearResult = useCallback(() => {
     setLastResult(null)
     if (phase === 'done') {
@@ -300,6 +303,7 @@ export function UploadJobProvider({ children }: { children: ReactNode }) {
       isActive: phase === 'sending' || phase === 'processing',
       uploadFiles,
       cancelJob,
+      resetUpload,
       clearResult,
       dismissJob,
     }),
@@ -311,6 +315,7 @@ export function UploadJobProvider({ children }: { children: ReactNode }) {
       lastResult,
       uploadFiles,
       cancelJob,
+      resetUpload,
       clearResult,
       dismissJob,
     ],
