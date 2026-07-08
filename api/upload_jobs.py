@@ -130,7 +130,7 @@ async def append_file_to_upload_job(
             raise HTTPException(status_code=404, detail="Job no encontrado")
         if job["estado"] != "queued":
             raise HTTPException(status_code=409, detail="El job ya esta en procesamiento")
-        if job["listo_para_procesar"]:
+        if job.get("listo_para_procesar"):
             raise HTTPException(status_code=409, detail="El job ya fue iniciado")
 
         orden = await conn.fetchval(
@@ -174,7 +174,7 @@ async def start_upload_job(pool, job_id: str, guardar_fn) -> dict:
         job = await _fetch_job_row(conn, job_id)
         if not job:
             raise HTTPException(status_code=404, detail="Job no encontrado")
-        if job["listo_para_procesar"]:
+        if job.get("listo_para_procesar"):
             return {
                 "job_id": job_id,
                 "estado": job["estado"],
@@ -251,7 +251,8 @@ async def _fetch_job_row(conn, job_id: str):
     return await conn.fetchrow(
         """SELECT id, estado, subido_por, user_id, total_archivos,
                   archivos_ok, archivos_error, total_registros, mensaje,
-                  directorio, creado_en, iniciado_en, finalizado_en
+                  directorio, listo_para_procesar,
+                  creado_en, iniciado_en, finalizado_en
            FROM upload_jobs WHERE id = $1""",
         job_id,
     )
@@ -435,7 +436,7 @@ async def process_upload_job(pool, job_id: str, guardar_fn) -> None:
                 return
             if job["estado"] == "completed":
                 return
-            if not job["listo_para_procesar"]:
+            if not job.get("listo_para_procesar"):
                 logger.info("Job %s aun no listo para procesar", job_id)
                 return
 

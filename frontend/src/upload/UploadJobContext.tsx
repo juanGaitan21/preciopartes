@@ -135,6 +135,15 @@ export function UploadJobProvider({ children }: { children: ReactNode }) {
         setSendingProgress(null)
         setActiveJobId(null)
         localStorage.removeItem(ACTIVE_JOB_KEY)
+        const msg = err instanceof Error ? err.message : 'Error al subir archivos'
+        if (msg === 'Failed to fetch') {
+          throw new Error(
+            'No se pudo conectar con el servidor. Verifica tu conexion o intenta con menos archivos a la vez.',
+          )
+        }
+        if (msg.includes('Sesión') || msg.includes('Token') || msg.includes('autorizado')) {
+          throw new Error('Sesion expirada. Cierra sesion y vuelve a entrar.')
+        }
         throw err
       }
     },
