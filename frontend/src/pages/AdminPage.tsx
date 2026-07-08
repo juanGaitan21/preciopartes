@@ -436,9 +436,11 @@ function CargarListasSection() {
 // ---------------------------------------------------------------------------
 
 function HistorialSection() {
+  const { lastResult, phase } = useUploadJob()
   const [listas, setListas] = useState<Lista[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [successMsg, setSuccessMsg] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -454,6 +456,12 @@ function HistorialSection() {
 
   useEffect(() => { load() }, [load])
 
+  useEffect(() => {
+    if (phase !== 'done' || !lastResult?.ok) return
+    setSuccessMsg(lastResult.mensaje)
+    void load()
+  }, [phase, lastResult, load])
+
   const desactivar = async (id: number) => {
     if (!confirm('Desactivar esta lista? Dejara de aparecer en el Comparador.')) return
     try {
@@ -461,6 +469,26 @@ function HistorialSection() {
       await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al desactivar')
+    }
+  }
+
+  const eliminar = async (lista: Lista) => {
+    if (
+      !confirm(
+        `Eliminar permanentemente "${lista.archivo_nombre}"?\n\n` +
+          `Se borraran ${lista.total_registros.toLocaleString('es-CO')} repuestos de ${lista.proveedor}. ` +
+          'Esta accion no se puede deshacer.',
+      )
+    ) {
+      return
+    }
+    try {
+      const res = await api.eliminarLista(lista.id)
+      setSuccessMsg(res.mensaje)
+      setError('')
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al eliminar')
     }
   }
 
@@ -476,6 +504,12 @@ function HistorialSection() {
 
   return (
     <div>
+      {successMsg && (
+        <div className="mb-4 rounded-lg border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-accent">
+          {successMsg}
+        </div>
+      )}
+
       {error && (
         <div className="mb-4 rounded-lg border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
           {error}
@@ -512,21 +546,29 @@ function HistorialSection() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    {l.activa ? (
+                    <div className="flex flex-wrap gap-2">
+                      {l.activa ? (
+                        <button
+                          onClick={() => desactivar(l.id)}
+                          className="rounded px-2 py-1 text-xs text-warning hover:bg-warning/10"
+                        >
+                          Desactivar
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => activar(l.id, l.archivo_nombre)}
+                          className="rounded px-2 py-1 text-xs text-accent hover:bg-accent/10"
+                        >
+                          Activar
+                        </button>
+                      )}
                       <button
-                        onClick={() => desactivar(l.id)}
+                        onClick={() => eliminar(l)}
                         className="rounded px-2 py-1 text-xs text-danger hover:bg-danger/10"
                       >
-                        Desactivar
+                        Eliminar
                       </button>
-                    ) : (
-                      <button
-                        onClick={() => activar(l.id, l.archivo_nombre)}
-                        className="rounded px-2 py-1 text-xs text-accent hover:bg-accent/10"
-                      >
-                        Activar
-                      </button>
-                    )}
+                    </div>
                   </td>
                 </tr>
               ))}

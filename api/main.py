@@ -7,6 +7,7 @@ Endpoints:
     GET  /api/proveedores         — Lista proveedores activos
     GET  /api/listas              — Historial de listas subidas
     DELETE /api/listas/{id}       — Desactiva una lista (no borra datos)
+    DELETE /api/listas/{id}/eliminar — Elimina lista y repuestos de forma permanente
     POST   /api/listas/{id}/activar — Reactiva una lista (desactiva las demas del mismo proveedor)
 """
 
@@ -616,6 +617,40 @@ async def desactivar_lista(
     if result == "UPDATE 0":
         raise HTTPException(status_code=404, detail="Lista no encontrada")
     return {"ok": True, "mensaje": f"Lista {lista_id} desactivada"}
+
+
+@app.delete("/api/listas/{lista_id}/eliminar")
+async def eliminar_lista(
+    lista_id: int,
+    _: dict = Depends(require_roles("admin")),
+):
+    """Elimina permanentemente la lista y sus repuestos (CASCADE en partes)."""
+    async with app.state.pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                """SELECT l.id, l.archivo_nombre, l.total_registros, l.proveedor_id,
+                          pr.nombre AS proveedor
+                   FROM listas l
+                   JOIN proveedores pr ON pr.id = l.proveedor_id
+                   WHERE l.id = $1""",
+                lista_id,
+            )
+            if not row:
+                raise HTTPException(status_code=404, detail="Lista no encontrada")
+
+            await conn.execute(
+                "UPDATE upload_job_archivos SET lista_id = NULL WHERE lista_id = $1",
+                lista_id,
+            )
+            await conn.execute("DELETE FROM listas WHERE id = $1", lista_id)
+
+    return {
+        "ok": True,
+        "mensaje": (
+            f"Lista '{row['archivo_nombre']}' eliminada "
+            f"({row['total_registros']:,} repuestos de {row['proveedor']})"
+        ),
+    }
 
 
 @app.post("/api/listas/{lista_id}/activar")

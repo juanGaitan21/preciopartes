@@ -8,17 +8,54 @@ export function UploadJobBanner() {
   if (!isActive && !lastResult) return null
 
   if (lastResult && phase === 'done') {
+    const ok = lastResult.ok
     return (
-      <div className="fixed bottom-4 right-4 z-50 w-full max-w-sm rounded-xl border border-accent/40 bg-surface p-4 shadow-2xl">
-        <p className="text-sm font-semibold text-accent">Carga completada</p>
+      <div
+        className={`fixed bottom-4 right-4 z-[80] w-full max-w-md rounded-xl border p-4 shadow-2xl ${
+          ok ? 'border-accent/40 bg-surface' : 'border-danger/40 bg-surface'
+        }`}
+        role="alert"
+      >
+        <p className={`text-sm font-semibold ${ok ? 'text-accent' : 'text-danger'}`}>
+          {ok ? 'Carga completada' : 'Error en la carga'}
+        </p>
         <p className="mt-1 text-sm text-muted">{lastResult.mensaje}</p>
+
+        {ok && lastResult.resultados.length > 0 && (
+          <ul className="mt-2 max-h-24 space-y-1 overflow-y-auto text-xs text-text">
+            {lastResult.resultados.map((r) => (
+              <li key={r.lista_id}>
+                {r.archivo} — {r.registros_cargados.toLocaleString('es-CO')} repuestos
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {!ok && lastResult.errores.length > 0 && (
+          <ul className="mt-2 space-y-1 text-xs text-danger">
+            {lastResult.errores.map((e, i) => (
+              <li key={`${e.archivo}-${i}`}>{e.archivo}: {e.mensaje}</li>
+            ))}
+          </ul>
+        )}
+
         <div className="mt-3 flex flex-wrap gap-2">
-          <Link
-            to="/comparador"
-            className="rounded-lg bg-accent-dim px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent"
-          >
-            Ir al Comparador
-          </Link>
+          {ok && (
+            <>
+              <Link
+                to="/comparador"
+                className="rounded-lg bg-accent-dim px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent"
+              >
+                Ir al Comparador
+              </Link>
+              <Link
+                to="/admin?tab=historial"
+                className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted hover:bg-surface-hover"
+              >
+                Ver historial
+              </Link>
+            </>
+          )}
           <button
             type="button"
             onClick={dismissJob}
@@ -39,7 +76,7 @@ export function UploadJobBanner() {
 
   return (
     <div
-      className="fixed bottom-4 right-4 z-50 w-full max-w-sm rounded-xl border border-primary/40 bg-surface p-4 shadow-2xl"
+      className="fixed bottom-4 right-4 z-[80] w-full max-w-sm rounded-xl border border-primary/40 bg-surface p-4 shadow-2xl"
       role="status"
       aria-live="polite"
     >
