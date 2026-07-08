@@ -31,6 +31,7 @@ from api.routes_auth import router as auth_router
 from api.upload_jobs import (
     ListaUploadError,
     append_file_to_upload_job,
+    cancel_upload_job,
     create_empty_upload_job,
     create_upload_job,
     ensure_upload_job_tables,
@@ -550,6 +551,15 @@ async def upload_listas_batch_async(
     )
     schedule_upload_job(app.state.pool, job["job_id"], _guardar_lista_desde_path)
     return job
+
+
+@app.post("/api/listas/jobs/{job_id}/cancel")
+async def cancel_lista_upload_job(
+    job_id: str,
+    user: dict = Depends(require_permission("upload")),
+):
+    """Cancela un job de carga atascado o en curso."""
+    return await cancel_upload_job(app.state.pool, job_id, user)
 
 
 @app.get("/api/listas/jobs/{job_id}")

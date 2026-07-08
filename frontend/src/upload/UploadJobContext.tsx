@@ -21,6 +21,7 @@ interface UploadJobContextValue {
   lastResult: BatchUploadResponse | null
   isActive: boolean
   uploadFiles: (files: File[]) => Promise<void>
+  cancelJob: () => Promise<void>
   clearResult: () => void
   dismissJob: () => void
 }
@@ -55,10 +56,16 @@ export function UploadJobProvider({ children }: { children: ReactNode }) {
     setJobStatus(status)
 
     if (status.estado === 'completed') {
-      setLastResult(jobToResult(status))
-      setPhase('done')
       setSendingProgress(null)
       localStorage.removeItem(ACTIVE_JOB_KEY)
+      if (status.mensaje.includes('Cancelado')) {
+        setPhase('idle')
+        setJobStatus(null)
+        setActiveJobId(null)
+        return true
+      }
+      setLastResult(jobToResult(status))
+      setPhase('done')
       return true
     }
 
@@ -134,6 +141,23 @@ export function UploadJobProvider({ children }: { children: ReactNode }) {
     [startPolling],
   )
 
+  const cancelJob = useCallback(async () => {
+    const jobId = activeJobId || localStorage.getItem(ACTIVE_JOB_KEY)
+    if (jobId) {
+      try {
+        await api.cancelUploadJob(jobId)
+      } catch {
+        // Si la API no tiene cancel aun, igual limpiamos la UI
+      }
+    }
+    localStorage.removeItem(ACTIVE_JOB_KEY)
+    setPhase('idle')
+    setJobStatus(null)
+    setActiveJobId(null)
+    setSendingProgress(null)
+    setLastResult(null)
+  }, [activeJobId])
+
   const clearResult = useCallback(() => {
     setLastResult(null)
     if (phase === 'done') {
@@ -161,6 +185,7 @@ export function UploadJobProvider({ children }: { children: ReactNode }) {
       lastResult,
       isActive: phase === 'sending' || phase === 'processing',
       uploadFiles,
+      cancelJob,
       clearResult,
       dismissJob,
     }),
@@ -171,6 +196,7 @@ export function UploadJobProvider({ children }: { children: ReactNode }) {
       sendingProgress,
       lastResult,
       uploadFiles,
+      cancelJob,
       clearResult,
       dismissJob,
     ],

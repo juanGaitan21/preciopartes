@@ -459,6 +459,11 @@ async def process_upload_job(pool, job_id: str, guardar_fn) -> None:
             if file_row["estado"] == "completed":
                 continue
 
+            async with pool.acquire() as conn:
+                if await _job_fue_cancelado(conn, job_id):
+                    logger.info("Job %s cancelado, deteniendo", job_id)
+                    return
+
             file_id = file_row["id"]
             filename = file_row["archivo_nombre"]
             file_path = job_path / filename
@@ -578,6 +583,57 @@ async def process_upload_job(pool, job_id: str, guardar_fn) -> None:
 
 def schedule_upload_job(pool, job_id: str, guardar_fn) -> None:
     asyncio.create_task(process_upload_job(pool, job_id, guardar_fn))
+
+
+async def _job_fue_cancelado(conn, job_id: str) -> bool:
+    row = await conn.fetchrow(
+        "SELECT mensaje FROM upload_jobs WHERE id = $1 AND estado = 'completed'",
+        job_id,
+    )
+    return bool(row and row["mensaje"] and "Cancelado" in row["mensaje"])
+
+
+async def cancel_upload_job(pool, job_id: str, user: Optional[dict] = None) -> dict:
+    async with pool.acquire() as conn:
+        job = await _fetch_job_row(conn, job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job no encontrado")
+
+        if user and job["user_id"] and job["user_id"] != user.get("id"):
+            if user.get("rol") != "admin":
+                raise HTTPException(status_code=403, detail="No autorizado")
+
+        if job["estado"] == "completed":
+            return {"ok": True, "mensaje": "El job ya habia terminado"}
+
+        async with conn.transaction():
+            await conn.execute(
+                """UPDATE upload_job_archivos
+                   SET estado = 'failed',
+                       error = $2::jsonb,
+                       finalizado_en = $3
+                   WHERE job_id = $1 AND estado IN ('pending', 'processing')""",
+                job_id,
+                json.dumps({
+                    "archivo": "",
+                    "mensaje": "Cancelado por el usuario",
+                    "codigo": "CANCELADO",
+                }),
+                _utcnow(),
+            )
+            await conn.execute(
+                """UPDATE upload_jobs
+                   SET estado = 'completed',
+                       listo_para_procesar = false,
+                       mensaje = 'Cancelado por usuario',
+                       finalizado_en = $2
+                   WHERE id = $1""",
+                job_id,
+                _utcnow(),
+            )
+
+    logger.info("Job %s cancelado por usuario", job_id)
+    return {"ok": True, "job_id": job_id, "mensaje": "Carga cancelada"}
 
 
 async def resume_pending_jobs(pool, guardar_fn) -> None:

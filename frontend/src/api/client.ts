@@ -175,6 +175,11 @@ export const api = {
   getUploadJobStatus: (jobId: string) =>
     request<UploadJobStatus>(`/api/listas/jobs/${jobId}`),
 
+  cancelUploadJob: (jobId: string) =>
+    request<{ ok: boolean; mensaje: string }>(`/api/listas/jobs/${jobId}/cancel`, {
+      method: 'POST',
+    }),
+
   desactivarLista: (listaId: number) =>
     request<{ ok: boolean; mensaje: string }>(`/api/listas/${listaId}`, { method: 'DELETE' }),
 

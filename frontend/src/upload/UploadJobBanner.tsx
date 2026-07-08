@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { useUploadJob } from './UploadJobContext'
 
 export function UploadJobBanner() {
-  const { phase, jobStatus, sendingProgress, activeJobId, lastResult, isActive, dismissJob } =
+  const { phase, jobStatus, sendingProgress, activeJobId, lastResult, isActive, cancelJob, dismissJob } =
     useUploadJob()
 
   if (!isActive && !lastResult) return null
@@ -105,6 +105,14 @@ export function UploadJobBanner() {
       {activeJobId && (
         <p className="mt-2 text-center text-[10px] text-muted">Job: {activeJobId.slice(0, 8)}...</p>
       )}
+
+      <button
+        type="button"
+        onClick={() => void cancelJob()}
+        className="mt-3 w-full rounded-lg border border-danger/40 px-3 py-2 text-xs font-medium text-danger hover:bg-danger/10"
+      >
+        Cancelar carga
+      </button>
     </div>
   )
 }
