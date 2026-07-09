@@ -15,8 +15,8 @@ REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 ROLES = ("admin", "vendedor", "consulta")
 
 ROLE_PERMISSIONS = {
-    "admin": {"buscar", "inventario", "admin", "upload", "users"},
-    "vendedor": {"buscar", "inventario"},
+    "admin": {"buscar", "inventario", "admin", "upload", "users", "analisis"},
+    "vendedor": {"buscar", "inventario", "analisis"},
     "consulta": {"buscar"},
 }
 

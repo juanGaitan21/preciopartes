@@ -60,6 +60,56 @@ export interface Lista {
   proveedor: string
 }
 
+export interface FiltrosBusqueda {
+  proveedores: { id: number; nombre: string }[]
+  marcas: string[]
+  categorias: string[]
+}
+
+export interface AnalisisResumen {
+  total_repuestos: number
+  listas_activas: number
+  proveedores_activos: number
+  referencias_comparables: number
+}
+
+export interface AnalisisRankingProveedor {
+  proveedor: string
+  proveedor_id: number
+  referencias_ganadas: number
+  participacion_pct: number
+  ahorro_potencial_total: number
+}
+
+export interface AnalisisCategoria {
+  categoria: string
+  referencias_comparables: number
+  mejor_proveedor: string
+  victorias: number
+  participacion_pct: number
+  ranking: { proveedor: string; victorias: number; pct: number }[]
+}
+
+export interface AnalisisOportunidad {
+  referencia_norm: string
+  descripcion: string
+  categoria: string
+  proveedor_mas_barato: string
+  precio_min: number
+  precio_max: number
+  spread_pct: number
+  num_ofertas: number
+}
+
+export interface AnalisisMercadoResponse {
+  resumen: AnalisisResumen
+  ranking_general: AnalisisRankingProveedor[]
+  por_categoria: AnalisisCategoria[]
+  oportunidades_ahorro: AnalisisOportunidad[]
+  top_marcas: { marca: string; referencias: number }[]
+  insights: string[]
+}
+
 export interface UserCreate {
   nombre: string
   email: string

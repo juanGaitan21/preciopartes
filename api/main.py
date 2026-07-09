@@ -27,7 +27,9 @@ from pydantic import BaseModel
 
 from api.deps import get_current_user, require_permission, require_roles
 from api.db_init import init_database
+from api.analytics import obtener_analisis_mercado, obtener_opciones_filtro
 from api.partes_bulk import insert_partes_bulk
+from api.search import build_buscar_query
 from api.routes_auth import router as auth_router
 from api.upload_jobs import (
     ListaUploadError,
@@ -119,142 +121,57 @@ async def buscar(
     q: str,
     proveedor_id: Optional[int] = None,
     vehiculo: Optional[str] = None,
+    marca: Optional[str] = None,
+    categoria: Optional[str] = None,
     solo_mas_baratos: bool = False,
-    limit: int = 50,
+    match_all: bool = True,
+    limit: int = 100,
     _: dict = Depends(require_permission("buscar")),
 ):
-    """
-    Busca repuestos por descripción, referencia o vehículo.
-    Retorna resultados ordenados por precio (más barato primero).
-
-    Parámetros:
-        q               — Texto a buscar (descripción, referencia, vehículo)
-        proveedor_id    — Filtrar por proveedor específico
-        vehiculo        — Filtrar por vehículo (ej: "AVEO", "KIA")
-        solo_mas_baratos — Si true, retorna solo el más barato por referencia
-        limit           — Máximo de resultados (default 50)
-    """
+    """Busca repuestos. match_all=false usa OR entre palabras (mas resultados)."""
     if not q or len(q.strip()) < 2:
-        raise HTTPException(status_code=400, detail="El término de búsqueda debe tener al menos 2 caracteres")
+        raise HTTPException(status_code=400, detail="El termino de busqueda debe tener al menos 2 caracteres")
 
-    terminos = q.strip().split()
+    terminos = [t for t in q.strip().split() if t]
 
-    # Construir condición de búsqueda multi-término
-    # Busca en: descripcion, referencia, referencia_norm, vehiculo
-    condiciones_texto = []
-    params = []
-    idx = 1
-
-    for termino in terminos:
-        t = f"%{termino.upper()}%"
-        condiciones_texto.append(f"""(
-            upper(p.descripcion)     LIKE ${idx}
-            OR upper(p.referencia)      LIKE ${idx}
-            OR upper(p.referencia_norm) LIKE ${idx}
-            OR upper(p.vehiculo)        LIKE ${idx}
-            OR upper(p.marca_vehiculo)  LIKE ${idx}
-            OR upper(p.equivalencia)    LIKE ${idx}
-            OR upper(pr.nombre)         LIKE ${idx}
-        )""")
-        params.append(t)
-        idx += 1
-
-    where = " AND ".join(condiciones_texto)
-
-    # Filtros adicionales
-    if proveedor_id:
-        where += f" AND p.proveedor_id = ${idx}"
-        params.append(proveedor_id)
-        idx += 1
-
-    if vehiculo:
-        where += f" AND upper(p.vehiculo) LIKE ${idx}"
-        params.append(f"%{vehiculo.upper()}%")
-        idx += 1
-
-    if solo_mas_baratos:
-        # Solo el más barato por referencia normalizada
-        query = f"""
-            SELECT DISTINCT ON (p.referencia_norm)
-                p.referencia,
-                p.referencia_norm,
-                p.equivalencia,
-                p.descripcion,
-                p.vehiculo,
-                p.marca_vehiculo,
-                p.precio::float,
-                p.precio_con_desc::float,
-                p.descuento_pct::float,
-                pr.nombre           AS proveedor,
-                pr.id               AS proveedor_id,
-                1                   AS rank_precio,
-                p.precio_con_desc::float AS precio_minimo,
-                0.0                 AS diferencia_vs_minimo,
-                0.0                 AS pct_sobre_minimo,
-                p.fecha_lista
-            FROM partes p
-            JOIN proveedores pr ON pr.id = p.proveedor_id
-            JOIN listas l       ON l.id  = p.lista_id
-            WHERE l.activa = true AND pr.activo = true
-              AND {where}
-            ORDER BY p.referencia_norm, p.precio_con_desc ASC
-            LIMIT ${idx}
-        """
-    else:
-        query = f"""
-            SELECT
-                p.referencia,
-                p.referencia_norm,
-                p.equivalencia,
-                p.descripcion,
-                p.vehiculo,
-                p.marca_vehiculo,
-                p.precio::float,
-                p.precio_con_desc::float,
-                p.descuento_pct::float,
-                pr.nombre           AS proveedor,
-                pr.id               AS proveedor_id,
-                RANK() OVER (
-                    PARTITION BY p.referencia_norm
-                    ORDER BY p.precio_con_desc ASC
-                )::int              AS rank_precio,
-                MIN(p.precio_con_desc) OVER (
-                    PARTITION BY p.referencia_norm
-                )::float            AS precio_minimo,
-                (p.precio_con_desc - MIN(p.precio_con_desc) OVER (
-                    PARTITION BY p.referencia_norm
-                ))::float           AS diferencia_vs_minimo,
-                ROUND(
-                    (p.precio_con_desc - MIN(p.precio_con_desc) OVER (
-                        PARTITION BY p.referencia_norm
-                    )) / NULLIF(MIN(p.precio_con_desc) OVER (
-                        PARTITION BY p.referencia_norm
-                    ), 0) * 100, 1
-                )::float            AS pct_sobre_minimo,
-                p.fecha_lista
-            FROM partes p
-            JOIN proveedores pr ON pr.id = p.proveedor_id
-            JOIN listas l       ON l.id  = p.lista_id
-            WHERE l.activa = true AND pr.activo = true
-              AND {where}
-            ORDER BY p.precio_con_desc ASC
-            LIMIT ${idx}
-        """
-
-    params.append(min(limit, 200))
+    try:
+        query, params = build_buscar_query(
+            terminos,
+            proveedor_id=proveedor_id,
+            vehiculo=vehiculo,
+            marca=marca,
+            categoria=categoria,
+            solo_mas_baratos=solo_mas_baratos,
+            match_all=match_all,
+            limit=limit,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     async with app.state.pool.acquire() as conn:
         try:
             rows = await conn.fetch(query, *params)
         except Exception as e:
-            logger.error(f"Error en búsqueda: {e} | query: {query} | params: {params}")
-            raise HTTPException(status_code=500, detail="Error interno de búsqueda")
+            logger.error("Error en busqueda: %s | params: %s", e, params)
+            raise HTTPException(status_code=500, detail="Error interno de busqueda") from e
 
     return {
         "total": len(rows),
         "termino": q,
         "resultados": [_enriquecer_busqueda(dict(r)) for r in rows],
     }
+
+
+@app.get("/api/analisis/mercado")
+async def analisis_mercado(_: dict = Depends(require_permission("analisis"))):
+    """Panel de analisis: mejor proveedor por categoria e insights."""
+    return await obtener_analisis_mercado(app.state.pool)
+
+
+@app.get("/api/analisis/filtros")
+async def analisis_filtros(_: dict = Depends(require_permission("buscar"))):
+    """Opciones para filtros del comparador."""
+    return await obtener_opciones_filtro(app.state.pool)
 
 
 def _enriquecer_busqueda(row: dict) -> dict:

@@ -1,6 +1,8 @@
 import type {
+  AnalisisMercadoResponse,
   BatchUploadResponse,
   BuscarResponse,
+  FiltrosBusqueda,
   Lista,
   Proveedor,
   TokenResponse,
@@ -118,17 +120,27 @@ export const api = {
     q: string
     proveedor_id?: number
     vehiculo?: string
+    marca?: string
+    categoria?: string
     solo_mas_baratos?: boolean
+    match_all?: boolean
     limit?: number
   }) => {
     const search = new URLSearchParams()
     search.set('q', params.q)
     if (params.proveedor_id) search.set('proveedor_id', String(params.proveedor_id))
     if (params.vehiculo) search.set('vehiculo', params.vehiculo)
+    if (params.marca) search.set('marca', params.marca)
+    if (params.categoria) search.set('categoria', params.categoria)
     if (params.solo_mas_baratos) search.set('solo_mas_baratos', 'true')
+    if (params.match_all === false) search.set('match_all', 'false')
     if (params.limit) search.set('limit', String(params.limit))
     return request<BuscarResponse>(`/api/buscar?${search}`)
   },
+
+  filtrosBusqueda: () => request<FiltrosBusqueda>('/api/analisis/filtros'),
+
+  analisisMercado: () => request<AnalisisMercadoResponse>('/api/analisis/mercado'),
 
   proveedores: () => request<Proveedor[]>('/api/proveedores'),
 

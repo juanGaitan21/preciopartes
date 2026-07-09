@@ -19,11 +19,12 @@ interface AuthContextValue {
   canAccess: (module: ModuleKey) => boolean
 }
 
-export type ModuleKey = 'comparador' | 'inventario' | 'admin'
+export type ModuleKey = 'comparador' | 'inventario' | 'analisis' | 'admin'
 
 const MODULE_ROLES: Record<ModuleKey, Rol[]> = {
   comparador: ['admin', 'vendedor', 'consulta'],
   inventario: ['admin', 'vendedor'],
+  analisis: ['admin', 'vendedor'],
   admin: ['admin'],
 }
 

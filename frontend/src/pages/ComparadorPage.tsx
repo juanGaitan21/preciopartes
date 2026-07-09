@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import { useOnboarding } from '../onboarding/OnboardingContext'
-import type { ResultadoBusqueda } from '../types'
+import type { FiltrosBusqueda, ResultadoBusqueda } from '../types'
 import { marcaLabel, pctMasCaro, vehiculoLabel } from '../utils/repuestoDisplay'
 
 const EMPTY = '-'
 const DEBOUNCE_MS = 350
 const MIN_CHARS = 2
+
+const inputClass =
+  'w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm text-text outline-none focus:border-primary'
 
 function formatCOP(value: number) {
   return new Intl.NumberFormat('es-CO', {
@@ -67,11 +71,24 @@ export function ComparadorPage() {
   const { markStepDone } = useOnboarding()
   const [query, setQuery] = useState('')
   const [soloMasBaratos, setSoloMasBaratos] = useState(false)
+  const [matchAll, setMatchAll] = useState(true)
+  const [proveedorId, setProveedorId] = useState('')
+  const [marca, setMarca] = useState('')
+  const [vehiculo, setVehiculo] = useState('')
+  const [categoria, setCategoria] = useState('')
+  const [filtros, setFiltros] = useState<FiltrosBusqueda | null>(null)
   const [resultados, setResultados] = useState<ResultadoBusqueda[]>([])
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
   const [error, setError] = useState('')
   const requestId = useRef(0)
+
+  useEffect(() => {
+    void api.filtrosBusqueda().then(setFiltros).catch(() => {})
+  }, [])
+
+  const filtrosActivos =
+    proveedorId !== '' || marca !== '' || vehiculo.trim() !== '' || categoria !== ''
 
   useEffect(() => {
     const trimmed = query.trim()
@@ -93,7 +110,12 @@ export function ComparadorPage() {
         const data = await api.buscar({
           q: trimmed,
           solo_mas_baratos: soloMasBaratos,
-          limit: 100,
+          match_all: matchAll,
+          limit: 150,
+          proveedor_id: proveedorId ? Number(proveedorId) : undefined,
+          marca: marca || undefined,
+          vehiculo: vehiculo.trim() || undefined,
+          categoria: categoria || undefined,
         })
         if (id !== requestId.current) return
         setResultados(data.resultados)
@@ -110,18 +132,42 @@ export function ComparadorPage() {
     }, DEBOUNCE_MS)
 
     return () => clearTimeout(timer)
-  }, [query, soloMasBaratos, markStepDone])
+  }, [
+    query,
+    soloMasBaratos,
+    matchAll,
+    proveedorId,
+    marca,
+    vehiculo,
+    categoria,
+    markStepDone,
+  ])
+
+  const limpiarFiltros = () => {
+    setProveedorId('')
+    setMarca('')
+    setVehiculo('')
+    setCategoria('')
+  }
 
   const trimmedQuery = query.trim()
   const showHint = trimmedQuery.length > 0 && trimmedQuery.length < MIN_CHARS
 
   return (
     <div className="mx-auto max-w-7xl">
-      <div className="mb-6">
-        <h1 className="text-xl font-bold text-text md:text-2xl">Comparador de precios</h1>
-        <p className="mt-1 text-sm text-muted">
-          Busca repuestos y compara precios entre proveedores. El mas barato se resalta en verde.
-        </p>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-text md:text-2xl">Comparador de precios</h1>
+          <p className="mt-1 text-sm text-muted">
+            Busca repuestos y compara precios entre proveedores. El mas barato se resalta en verde.
+          </p>
+        </div>
+        <Link
+          to="/analisis"
+          className="rounded-lg border border-primary/40 px-3 py-2 text-sm text-primary hover:bg-primary/10"
+        >
+          Ver analisis de mercado
+        </Link>
       </div>
 
       <div className="mb-6 rounded-xl border border-border bg-surface p-4 md:p-5">
@@ -131,32 +177,107 @@ export function ComparadorPage() {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Referencia, descripcion, marca o vehiculo (ej: hyundai, soporte, bujia)..."
+            placeholder="Referencia, descripcion, marca o vehiculo (ej: hyundai filtro soporte)..."
             autoComplete="off"
-            className="w-full rounded-lg border border-border bg-bg px-3 py-2.5 text-sm text-text outline-none focus:border-primary"
+            className={inputClass}
           />
         </div>
 
-        <div className="mt-4">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted">Proveedor</label>
+            <select
+              value={proveedorId}
+              onChange={(e) => setProveedorId(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">Todos</option>
+              {filtros?.proveedores.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.nombre}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted">Marca vehiculo</label>
+            <select value={marca} onChange={(e) => setMarca(e.target.value)} className={inputClass}>
+              <option value="">Todas</option>
+              {filtros?.marcas.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted">Vehiculo / modelo</label>
+            <input
+              type="text"
+              value={vehiculo}
+              onChange={(e) => setVehiculo(e.target.value)}
+              placeholder="Ej: AVEO, SPORTAGE..."
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted">Categoria</label>
+            <select
+              value={categoria}
+              onChange={(e) => setCategoria(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">Todas</option>
+              {filtros?.categorias.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-4">
           <label className="flex cursor-pointer items-center gap-2 text-sm text-muted">
             <input
               type="checkbox"
               checked={soloMasBaratos}
               onChange={(e) => setSoloMasBaratos(e.target.checked)}
-              className="rounded border-border bg-bg text-accent accent-dim focus:ring-accent-dim"
+              className="rounded border-border bg-bg accent-dim"
             />
-            Solo mostrar el mas barato por referencia
+            Solo el mas barato por referencia
           </label>
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-muted">
+            <input
+              type="checkbox"
+              checked={matchAll}
+              onChange={(e) => setMatchAll(e.target.checked)}
+              className="rounded border-border bg-bg accent-dim"
+            />
+            Todas las palabras (mas preciso)
+          </label>
+          {filtrosActivos && (
+            <button
+              type="button"
+              onClick={limpiarFiltros}
+              className="text-sm text-warning hover:underline"
+            >
+              Limpiar filtros
+            </button>
+          )}
         </div>
+
+        <p className="mt-3 text-xs text-muted">
+          Desactiva &quot;Todas las palabras&quot; si buscas varios terminos y quieres mas resultados
+          (modo cualquier palabra).
+        </p>
 
         {showHint && (
           <p className="mt-3 text-sm text-muted">
             Escribe al menos {MIN_CHARS} caracteres para buscar...
           </p>
         )}
-        {error && (
-          <p className="mt-3 text-sm text-danger">{error}</p>
-        )}
+        {error && <p className="mt-3 text-sm text-danger">{error}</p>}
       </div>
 
       {(searched || loading) && trimmedQuery.length >= MIN_CHARS && (
@@ -166,8 +287,8 @@ export function ComparadorPage() {
               {loading
                 ? 'Buscando...'
                 : resultados.length === 0
-                  ? 'No se encontraron resultados para tu busqueda'
-                  : `${resultados.length} resultado${resultados.length !== 1 ? 's' : ''} encontrado${resultados.length !== 1 ? 's' : ''}`}
+                  ? 'No se encontraron resultados. Prueba desactivar "Todas las palabras" o quitar filtros.'
+                  : `${resultados.length} resultado${resultados.length !== 1 ? 's' : ''}${resultados.length >= 150 ? ' (mostrando los primeros 150)' : ''}`}
             </p>
           </div>
 

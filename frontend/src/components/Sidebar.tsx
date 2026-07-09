@@ -4,6 +4,7 @@ import { useOnboarding } from '../onboarding/OnboardingContext'
 
 const NAV_ITEMS: { to: string; label: string; icon: string; module: ModuleKey }[] = [
   { to: '/comparador', label: 'Comparador', icon: '🔍', module: 'comparador' },
+  { to: '/analisis', label: 'Analisis', icon: '📊', module: 'analisis' },
   { to: '/inventario', label: 'Inventario', icon: '📦', module: 'inventario' },
   { to: '/admin', label: 'Administración', icon: '⚙️', module: 'admin' },
 ]
