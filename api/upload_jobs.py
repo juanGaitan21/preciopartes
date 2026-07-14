@@ -141,6 +141,21 @@ async def append_file_to_upload_job(
         if job.get("listo_para_procesar"):
             raise HTTPException(status_code=409, detail="El job ya fue iniciado")
 
+        ya_existe = await conn.fetchval(
+            """SELECT 1 FROM upload_job_archivos
+               WHERE job_id = $1 AND lower(archivo_nombre) = lower($2)""",
+            job_id,
+            safe_name,
+        )
+        if ya_existe:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Ya hay un archivo llamado '{safe_name}' en esta carga. "
+                    "Cada nombre debe ser unico dentro de la misma subida."
+                ),
+            )
+
         orden = await conn.fetchval(
             "SELECT COUNT(*) FROM upload_job_archivos WHERE job_id = $1",
             job_id,
@@ -214,6 +229,20 @@ async def create_upload_job(
 ) -> dict:
     if not files:
         raise HTTPException(status_code=400, detail="No se enviaron archivos")
+
+    nombres = [Path(name).name for name, _ in files]
+    vistos: set[str] = set()
+    for nombre in nombres:
+        key = nombre.lower()
+        if key in vistos:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Hay archivos duplicados con el nombre '{nombre}'. "
+                    "En una misma carga cada nombre debe ser unico."
+                ),
+            )
+        vistos.add(key)
 
     job_id = str(uuid.uuid4())
     job_path = _job_dir(job_id)

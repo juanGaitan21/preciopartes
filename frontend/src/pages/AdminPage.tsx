@@ -306,10 +306,45 @@ function CargarListasSection() {
     setLiberadoMsg('Formulario liberado. Ya puedes subir archivos de nuevo.')
   }
 
+  const findDuplicateNames = (files: File[]) => {
+    const seen = new Map<string, number>()
+    const duplicates: string[] = []
+    for (const f of files) {
+      const key = f.name.trim().toLowerCase()
+      const count = (seen.get(key) ?? 0) + 1
+      seen.set(key, count)
+      if (count === 2) duplicates.push(f.name)
+    }
+    return duplicates
+  }
+
+  const handleSelectFiles = (selected: File[]) => {
+    setLiberadoMsg('')
+    const duplicates = findDuplicateNames(selected)
+    if (duplicates.length > 0) {
+      setArchivos([])
+      setError(
+        `Hay archivos con el mismo nombre en esta seleccion: ${duplicates.join(', ')}. ` +
+          'Quita los duplicados e intenta de nuevo (en una misma carga cada nombre debe ser unico).',
+      )
+      return
+    }
+    setError('')
+    setArchivos(selected)
+  }
+
   const handleUpload = async (e: FormEvent) => {
     e.preventDefault()
     if (archivos.length === 0) {
       setError('Selecciona uno o mas archivos Excel')
+      return
+    }
+    const duplicates = findDuplicateNames(archivos)
+    if (duplicates.length > 0) {
+      setError(
+        `Hay archivos con el mismo nombre: ${duplicates.join(', ')}. ` +
+          'Cada archivo de la carga debe tener un nombre distinto.',
+      )
       return
     }
     setError('')
@@ -385,12 +420,15 @@ function CargarListasSection() {
             multiple
             disabled={isActive}
             className="w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-accent-dim file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-accent disabled:opacity-50"
-            onChange={(e) => setArchivos(Array.from(e.target.files ?? []))}
+            onChange={(e) => {
+              handleSelectFiles(Array.from(e.target.files ?? []))
+              e.target.value = ''
+            }}
           />
           {archivos.length > 0 && (
             <ul className="mt-3 space-y-1 rounded-lg border border-border bg-bg p-3">
               {archivos.map((f) => (
-                <li key={f.name} className="text-sm text-muted">
+                <li key={`${f.name}-${f.size}-${f.lastModified}`} className="text-sm text-muted">
                   {f.name}
                 </li>
               ))}
