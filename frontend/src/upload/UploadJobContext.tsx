@@ -114,7 +114,25 @@ export function UploadJobProvider({ children }: { children: ReactNode }) {
         return true
       }
 
-      const progressKey = `${status.progreso_pct}:${status.archivos_completados}:${status.archivos_error}`
+      // Si hay un archivo procesandose, el servidor sigue trabajando
+      // (un Excel grande puede tardar 10-20 min en leer/guardar).
+      // Solo detectar atasco si no hay actividad real.
+      const processingFile = status.archivos.find((a) => a.estado === 'processing')
+      if (processingFile || status.archivos_procesando > 0) {
+        stalePollsRef.current = 0
+        lastProgressRef.current = `${status.progreso_pct}|${status.mensaje}|${processingFile?.fase_detalle ?? ''}`
+        setPhase('processing')
+        return false
+      }
+
+      const progressKey = [
+        status.progreso_pct,
+        status.archivos_completados,
+        status.archivos_error,
+        status.mensaje,
+        status.estado,
+      ].join('|')
+
       if (progressKey === lastProgressRef.current) {
         stalePollsRef.current += 1
       } else {
@@ -125,7 +143,7 @@ export function UploadJobProvider({ children }: { children: ReactNode }) {
       if (stalePollsRef.current >= STALE_POLL_LIMIT) {
         finishWithResult(
           pollErrorResult(
-            'La carga quedo atascada. Cancela e intenta de nuevo con un archivo pequeno.',
+            'La carga lleva mucho tiempo sin avances. Usa "Liberar formulario" y vuelve a intentar; con archivos muy grandes sube de a uno.',
           ),
         )
         return true
